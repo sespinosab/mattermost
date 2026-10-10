@@ -35,6 +35,7 @@ FROM alpine:3.20
 ENV PATH="/mattermost/bin:${PATH}"
 
 # Install minimal infrastructure utilities
+# hadolint ignore=DL3018
 RUN apk add --no-cache ca-certificates curl jq tzdata bash
 
 # Set up the expected application directory layout
@@ -46,13 +47,17 @@ COPY --from=backend-builder /src/server/bin/mattermost /mattermost/bin/
 # 2. Copy the compiled React assets from STAGE 1 into the exact location the Go app expects
 COPY --from=frontend-builder /src/webapp/dist /mattermost/client/
 
-# 3. Pull default configuration rules from your repository source
+# 3. Pull default configuration rules from repository source
 COPY --from=backend-builder /src/server/config/config.json /mattermost/config.defaults.json
 COPY --from=backend-builder /src/server/config/config.json /mattermost/config/config.json
 
+# Copy operational script to manage database configuration readiness
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
 # Apply security best-practices: Add and use a dedicated non-root user
 RUN addgroup -S mattermost && adduser -S mattermost -G mattermost \
-    && chown -R mattermost:mattermost /mattermost
+    && chown -R mattermost:mattermost /mattermost /entrypoint.sh
 
 USER mattermost
 WORKDIR /mattermost
@@ -62,10 +67,6 @@ EXPOSE 8065
 
 # Declare volume mount paths for data persistence
 VOLUME ["/mattermost/data", "/mattermost/config", "/mattermost/plugins"]
-
-# Copy operational script to manage database configuration readiness
-COPY --chown=mattermost:mattermost entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
 
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["mattermost"]
