@@ -1,0 +1,9 @@
+.git
+.github
+server/bin
+node_modules
+dist
+.parcel-cache
+tmp
+*.tar
+

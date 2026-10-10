@@ -1,21 +1,17 @@
 # ==========================================
 # STAGE 1: Compile the React Frontend Assets
 # ==========================================
-FROM node:18-alpine AS frontend-builder
+FROM node:24-alpine AS frontend-builder
 
 WORKDIR /src/webapp
-# Copy frontend configurations first to leverage Docker caching
-COPY webapp/package*.json ./
-RUN npm ci
-
-# Copy the remaining frontend code and compile static production files
+# Copy all webapp source code (required by npm workspaces during postinstall)
 COPY webapp/ .
-RUN npm run build
+RUN npm ci --engine-strict=false && npm run build
 
 # ==========================================
 # STAGE 2: Compile the Go Backend Binary
 # ==========================================
-FROM golang:1.23-alpine AS backend-builder
+FROM golang:alpine AS backend-builder
 RUN apk add --no-cache git make bash gcc musl-dev
 
 WORKDIR /src
@@ -23,8 +19,12 @@ WORKDIR /src
 COPY . .
 
 # Compile a static, production-optimized Go binary targeting Linux 64-bit
+ENV GOTOOLCHAIN=auto
 RUN cd server && \
-    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -tags enterprise -o ./bin/mattermost ./cmd/mattermost
+    go mod edit -replace github.com/mattermost/mattermost/server/public=./public && \
+    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o ./bin/mattermost ./cmd/mattermost && \
+    mkdir -p config && \
+    OUTPUT_CONFIG=/src/server/config/config.json go run ./scripts/config_generator
 
 # ==========================================
 # STAGE 3: Build the Final Monolithic Runtime
@@ -45,11 +45,14 @@ RUN mkdir -p /mattermost/bin /mattermost/data /mattermost/config /mattermost/plu
 COPY --from=backend-builder /src/server/bin/mattermost /mattermost/bin/
 
 # 2. Copy the compiled React assets from STAGE 1 into the exact location the Go app expects
-COPY --from=frontend-builder /src/webapp/dist /mattermost/client/
+COPY --from=frontend-builder /src/webapp/channels/dist /mattermost/client/
 
-# 3. Pull default configuration rules from repository source
+# 3. Pull default configuration rules and assets (i18n, fonts, templates)
 COPY --from=backend-builder /src/server/config/config.json /mattermost/config.defaults.json
 COPY --from=backend-builder /src/server/config/config.json /mattermost/config/config.json
+COPY --from=backend-builder /src/server/i18n /mattermost/i18n/
+COPY --from=backend-builder /src/server/fonts /mattermost/fonts/
+COPY --from=backend-builder /src/server/templates /mattermost/templates/
 
 # Copy operational script to manage database configuration readiness
 COPY entrypoint.sh /entrypoint.sh
@@ -69,4 +72,4 @@ EXPOSE 8065
 VOLUME ["/mattermost/data", "/mattermost/config", "/mattermost/plugins"]
 
 ENTRYPOINT ["/entrypoint.sh"]
-CMD ["mattermost"]
+CMD ["mattermost", "server"]
