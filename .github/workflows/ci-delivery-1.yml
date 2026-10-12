@@ -33,13 +33,14 @@ jobs:
           failure-threshold: error
 
       - name: Validate Docker Compose Configuration
-        run: |
-          docker compose -f docker-compose.yml config
+        run: docker compose -f docker-compose.yml config
 
   build:
     name: 2. Build Container Image
     needs: lint
     runs-on: ubuntu-latest
+    outputs:
+      image_ref: ${{ steps.prep.outputs.image_ref }}
     steps:
       - name: Checkout Source Code
         uses: actions/checkout@v4
@@ -47,25 +48,24 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Downcase Image Name
-        run: |
-          echo "IMAGE_NAME=${GITHUB_REPOSITORY,,}" >> ${GITHUB_ENV}
+      - name: Prepare image reference (lowercase)
+        id: prep
+        run: echo "image_ref=${{ env.REGISTRY }}/${GITHUB_REPOSITORY,,}:test" >> "$GITHUB_OUTPUT"
 
-      - name: Build Docker Image (Local artifact for testing)
+      - name: Build Docker Image (local for testing)
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ./Dockerfile
           load: true
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:test
+          tags: ${{ steps.prep.outputs.image_ref }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Save Docker Image Artifact
-        run: |
-          docker save ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:test -o image-test.tar
+      - name: Save Docker image as artifact
+        run: docker save "${{ steps.prep.outputs.image_ref }}" -o image-test.tar
 
-      - name: Upload Image Artifact for Security Scanning
+      - name: Upload image artifact for security scanning
         uses: actions/upload-artifact@v4
         with:
           name: container-image
@@ -77,28 +77,23 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - name: Downcase Image Name
-        run: |
-          echo "IMAGE_NAME=${GITHUB_REPOSITORY,,}" >> ${GITHUB_ENV}
-
-      - name: Download Image Artifact
+      - name: Download image artifact
         uses: actions/download-artifact@v4
         with:
           name: container-image
 
-      - name: Load Docker Image
-        run: |
-          docker load -i image-test.tar
+      - name: Load Docker image
+        run: docker load -i image-test.tar
 
-      - name: Scan Image with Aqua Trivy
+      - name: Scan image with Aqua Trivy
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:test
-          format: 'table'
+          image-ref: ${{ needs.build.outputs.image_ref }}
+          format: table
           exit-code: '0'
           ignore-unfixed: true
-          vuln-type: 'os,library'
-          severity: 'CRITICAL,HIGH'
+          vuln-type: os,library
+          severity: CRITICAL,HIGH
 
   publish:
     name: 4. Publish Container Artifact
@@ -112,10 +107,6 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Downcase Image Name
-        run: |
-          echo "IMAGE_NAME=${GITHUB_REPOSITORY,,}" >> ${GITHUB_ENV}
-
       - name: Log in to GitHub Container Registry (GHCR)
         uses: docker/login-action@v3
         with:
@@ -123,17 +114,21 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract Metadata (Tags and Labels)
+      - name: Prepare lowercase image name
+        id: prep
+        run: echo "image_name=${{ env.REGISTRY }}/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Extract metadata (tags and labels)
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: ${{ steps.prep.outputs.image_name }}
           tags: |
             type=raw,value=latest
             type=sha,format=short
             type=ref,event=branch
 
-      - name: Build & Publish Container to GHCR
+      - name: Build & Publish container to GHCR
         uses: docker/build-push-action@v6
         with:
           context: .
