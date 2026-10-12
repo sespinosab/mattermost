@@ -4,10 +4,10 @@ name: Docs Gap Analysis
 # analyze (model, read-only) and report (label/comment writer) are separate jobs.
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-    branches:
-      - master
+  #pull_request:
+  #  types: [opened, synchronize, reopened, ready_for_review]
+  #  branches:
+  #    - master
 
 permissions:
   contents: read

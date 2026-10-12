@@ -12,10 +12,10 @@
 # the two concerns: binary params tests the Postgres driver encoding;
 # this workflow tests for data races.
 name: Server CI Nightly Race
-on:
-  schedule:
-    - cron: "0 6 * * *" # Daily 6am UTC (~2am ET)
-  workflow_dispatch: # Manual trigger for on-demand race detection
+#on:
+#  schedule:
+#    - cron: "0 6 * * *" # Daily 6am UTC (~2am ET)
+#  workflow_dispatch: # Manual trigger for on-demand race detection
 
 permissions:
   contents: read

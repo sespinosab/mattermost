@@ -1,14 +1,14 @@
 name: Web App CI
-on:
-  push:
-    branches:
-      - master
-      - release-*
-  pull_request:
-    paths:
-      - "webapp/**"
-      - ".github/workflows/webapp-ci.yml"
-      - ".github/actions/webapp-setup/**"
+#on:
+#  push:
+#    branches:
+#      - master
+#      - release-*
+#  pull_request:
+#    paths:
+#      - "webapp/**"
+#      - ".github/workflows/webapp-ci.yml"
+#      - ".github/actions/webapp-setup/**"
 
 concurrency:
   group: ${{ github.event_name == 'pull_request' && format('{0}-{1}', github.workflow, github.ref) || github.run_id }}

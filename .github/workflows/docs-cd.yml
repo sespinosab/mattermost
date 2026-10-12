@@ -1,13 +1,13 @@
 name: docs-cd
 
 on:
-  push:
-    branches:
-      - master
-    paths:
-      - "docs/**"
-      - "api/v4/source/**"
-      - "api/playbooks/**"
+  #push:
+  #  branches:
+  #    - master
+  #  paths:
+  #    - "docs/**"
+  #    - "api/v4/source/**"
+  #    - "api/playbooks/**"
 
 # One deploy at a time. A newer push cancels an in-flight deploy — acceptable
 # for a static site where the newer content supersedes the older.

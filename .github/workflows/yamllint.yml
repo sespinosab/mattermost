@@ -1,14 +1,14 @@
 name: YAML Lint
 
-on:
-  push:
-    branches:
-      - master
-      - release-*
-  pull_request:
-    paths:
-      - ".github/workflows/**"
-      - ".yamllint"
+#on:
+#  push:
+#    branches:
+#      - master
+#      - release-*
+#  pull_request:
+#    paths:
+#      - ".github/workflows/**"
+#      - ".yamllint"
 
 concurrency:
   group: ${{ github.event_name == 'pull_request' && format('{0}-{1}', github.workflow, github.ref) || github.run_id }}

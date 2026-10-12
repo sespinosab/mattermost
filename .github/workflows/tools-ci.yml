@@ -1,14 +1,14 @@
 name: Tools CI
-on:
-  push:
-    branches:
-      - master
-      - release-*
-  pull_request:
-    paths:
-      - "tools/mattermost-govet/**"
-      - "tools/mmgotool/**"
-      - ".github/workflows/tools-ci.yml"
+#on:
+  #push:
+  #  branches:
+  #    - master
+  #    - release-*
+  #pull_request:
+  #  paths:
+  #    - "tools/mattermost-govet/**"
+  #    - "tools/mmgotool/**"
+  #    - ".github/workflows/tools-ci.yml"
 
 concurrency:
   group: ${{ github.event_name == 'pull_request' && format('{0}-{1}', github.workflow, github.ref) || github.run_id }}

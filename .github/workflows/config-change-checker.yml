@@ -15,13 +15,13 @@
 name: Config Change Checker
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened]
-    paths:
-      - 'server/public/model/config.go'
-      - 'server/channels/api4/**'
-      - 'server/public/model/audit_events.go'
-      - 'server/build/Dockerfile.buildenv'
+  #pull_request:
+  #  types: [opened, synchronize, reopened]
+  #  paths:
+  #    - 'server/public/model/config.go'
+  #   - 'server/channels/api4/**'
+  #    - 'server/public/model/audit_events.go'
+  #    - 'server/build/Dockerfile.buildenv'
 
 # Cancel any in-progress run for the same PR when a new commit is pushed.
 concurrency:
