@@ -13,8 +13,8 @@ name: Docs Writer (Merged PR)
 # fork heads named docs/pr-*.
 
 on:
-  pull_request:
-    types: [closed]
+  #pull_request:
+  #  types: [closed]
   workflow_dispatch:
     inputs:
       pr_number:

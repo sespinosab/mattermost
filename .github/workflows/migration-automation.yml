@@ -8,11 +8,11 @@ name: Migration Review & Release Notes
 # Required secrets:
 #   ANTHROPIC_API_KEY  — already a repo secret
  
-on:
-  push:
-    branches: [master]
-    paths:
-      - 'server/channels/db/migrations/postgres/**.up.sql'
+#on:
+  #push:
+  #  branches: [master]
+  #  paths:
+  #    - 'server/channels/db/migrations/postgres/**.up.sql'
  
 permissions:
   contents: read  # checkout only

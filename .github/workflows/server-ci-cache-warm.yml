@@ -5,10 +5,10 @@
 # prerequisite, so a binary the key doesn't cover still gets rebuilt before use.
 name: Server CI Cache Warm
 
-on:
-  schedule:
-    - cron: "0 2 * * *" # Daily 2am UTC — before the nightly server CI runs
-  workflow_dispatch:
+#on:
+  #schedule:
+  #  - cron: "0 2 * * *" # Daily 2am UTC — before the nightly server CI runs
+  #workflow_dispatch:
 
 # Serialize scheduled and manual runs so they don't race to save the same key.
 concurrency:

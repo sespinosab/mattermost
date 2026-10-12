@@ -8,16 +8,16 @@
 name: "E2E Cache Warm: Cypress deps"
 
 on:
-  schedule:
-    - cron: "0 3 * * *" # Daily 3am UTC — after the webapp node_modules and E2E npm registry caches warm at 1am
+  #schedule:
+  #  - cron: "0 3 * * *" # Daily 3am UTC — after the webapp node_modules and E2E npm registry caches warm at 1am
   # Warm as soon as the key's only input lands on master, so the merge run and
   # subsequent PRs hit the cache instead of paying for the artifact fallback all
   # day. The schedule is the backstop.
-  push:
-    branches:
-      - master
-    paths:
-      - "e2e-tests/cypress/package-lock.json"
+  #push:
+  #  branches:
+  #    - master
+  #  paths:
+  #    - "e2e-tests/cypress/package-lock.json"
   workflow_dispatch:
 
 # Keep manual, scheduled and push-triggered runs from racing to save the same key.

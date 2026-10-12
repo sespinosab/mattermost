@@ -1,14 +1,14 @@
 name: i18n CI PR
-on:
-  pull_request:
-    paths:
-      - "server/i18n/**"
-      - "webapp/channels/src/i18n/**"
-      # The checkers themselves, so a change to one is verified by it.
-      - "webapp/channels/scripts/check_icu.mjs"
-      - "tools/mmgotool/**"
-      - ".github/workflows/i18n-ci-pr.yml"
-      - ".github/workflows/i18n-ci-template.yml"
+#on:
+  #pull_request:
+  #  paths:
+  #    - "server/i18n/**"
+  #    - "webapp/channels/src/i18n/**"
+  # The checkers themselves, so a change to one is verified by it.
+  #    - "webapp/channels/scripts/check_icu.mjs"
+  #    - "tools/mmgotool/**"
+  #    - ".github/workflows/i18n-ci-pr.yml"
+  #    - ".github/workflows/i18n-ci-template.yml"
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true

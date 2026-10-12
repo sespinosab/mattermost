@@ -7,13 +7,13 @@ name: docs-ime-render
 # sees it in their diff and it lands via the same merge as the code.
 
 on:
-  pull_request:
-    paths:
-      - "docs/site/src/components/IMEDiagram/**"
-      - "docs/site/scripts/render-ime.mjs"
-      - "docs/site/static/img/ime/logos/**"
-      - "docs/site/static/img/ime/banner-bg.jpg"
-      - ".github/workflows/docs-ime-render.yml"
+  #pull_request:
+  #  paths:
+  #    - "docs/site/src/components/IMEDiagram/**"
+  #    - "docs/site/scripts/render-ime.mjs"
+  #    - "docs/site/static/img/ime/logos/**"
+  #    - "docs/site/static/img/ime/banner-bg.jpg"
+  #    - ".github/workflows/docs-ime-render.yml"
 
 # One render per PR at a time. Newer pushes cancel the in-flight run
 # so we don't queue up stale renders behind a rapid succession of

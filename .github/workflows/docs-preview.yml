@@ -1,11 +1,11 @@
 name: docs-preview
 
 on:
-  pull_request:
-    types: [opened, reopened, synchronize, ready_for_review]
-    paths:
-      - 'docs/**'
-      - 'api/**'
+  #pull_request:
+  #  types: [opened, reopened, synchronize, ready_for_review]
+  #  paths:
+  #    - 'docs/**'
+  #    - 'api/**'
 
 permissions:
   contents: read
