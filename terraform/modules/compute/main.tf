@@ -86,11 +86,24 @@ locals {
       --log-opt awslogs-stream='mattermost-${var.name_prefix}-%s' \\
       --log-opt awslogs-create-group=false \\
       '${var.mattermost_image}'
+    IS_STANDBY='%s'
+    HEALTHY=false
     for i in $(seq 1 30); do
-      if curl --fail --silent http://127.0.0.1:8065/api/v4/system/ping >/dev/null; then break; fi
+      if curl --fail --silent --show-error --max-time 5 http://127.0.0.1:8065/api/v4/system/ping >/dev/null; then
+        HEALTHY=true
+        break
+      fi
       sleep 10
     done
-    if [ '%s' = 'true' ]; then
+
+    if [ "$HEALTHY" != "true" ]; then
+      echo "Mattermost failed its startup health check after 5 minutes" >&2
+      if [ "$IS_STANDBY" != "true" ]; then
+        exit 1
+      fi
+    fi
+
+    if [ "$IS_STANDBY" = "true" ] && [ "$HEALTHY" = "true" ]; then
       shutdown -h now
     fi
   SCRIPT

@@ -50,35 +50,80 @@ def publish(subject, message):
 
 
 def lambda_handler(event, context):
-    addresses = ec2.describe_addresses(AllocationIds=[EIP_ALLOCATION_ID]).get("Addresses", [])
+    addresses = ec2.describe_addresses(
+        AllocationIds=[EIP_ALLOCATION_ID]
+    ).get("Addresses", [])
+
     if not addresses:
         logger.error("Elastic IP allocation %s was not found", EIP_ALLOCATION_ID)
         return {"status": "error", "reason": "eip-not-found"}
 
     current_instance = addresses[0].get("InstanceId")
+
     if current_instance and app_is_healthy(current_instance):
         logger.info("Mattermost is healthy on %s", current_instance)
         return {"status": "healthy", "instance_id": current_instance}
 
     if current_instance == STANDBY:
-        logger.error("Mattermost is unhealthy on standby instance %s; automatic failback is not configured", STANDBY)
+        logger.error("Mattermost is unhealthy on standby %s", STANDBY)
         return {"status": "standby-unhealthy", "instance_id": STANDBY}
 
     if current_instance not in (None, PRIMARY):
-        logger.error("Elastic IP is associated with unexpected instance %s; refusing automatic reassignment", current_instance)
-        publish("Mattermost failover stopped", f"Elastic IP allocation {EIP_ALLOCATION_ID} is associated with unexpected instance {current_instance}. Manual investigation required.")
-        return {"status": "unexpected-eip-association", "instance_id": current_instance}
+        logger.error("Unexpected Elastic IP association: %s", current_instance)
+        publish(
+            "Mattermost failover stopped",
+            f"Elastic IP is associated with unexpected instance {current_instance}. "
+            "Manual investigation required.",
+        )
+        return {"status": "unexpected-eip-association"}
 
-    logger.error("Mattermost health check failed on primary; starting standby %s", STANDBY)
     try:
-        ec2.start_instances(InstanceIds=[STANDBY])
-        waiter = ec2.get_waiter("instance_running")
-        waiter.wait(InstanceIds=[STANDBY], WaiterConfig={"Delay": 10, "MaxAttempts": 18})
-        ec2.associate_address(AllocationId=EIP_ALLOCATION_ID, InstanceId=STANDBY, AllowReassociation=True)
-        publish("Mattermost failover initiated", f"Mattermost did not respond on the primary EC2. Started standby {STANDBY} in another Availability Zone and reassigned the Elastic IP. Allow several minutes for startup, then verify the application.")
-        logger.info("Elastic IP reassigned to standby %s", STANDBY)
-        return {"status": "failover-started", "instance_id": STANDBY}
+        response = ec2.describe_instances(InstanceIds=[STANDBY])
+        instance = response["Reservations"][0]["Instances"][0]
+        state = instance["State"]["Name"]
+
+        if state == "stopped":
+            ec2.start_instances(InstanceIds=[STANDBY])
+            publish(
+                "Mattermost failover initiated",
+                f"Standby {STANDBY} is starting. The Elastic IP will only move "
+                "after Mattermost passes its health check.",
+            )
+            return {"status": "standby-starting", "instance_id": STANDBY}
+
+        if state == "pending":
+            return {"status": "standby-starting", "instance_id": STANDBY}
+
+        if state != "running":
+            logger.warning("Standby is not ready; instance state is %s", state)
+            return {
+                "status": "standby-not-ready",
+                "instance_id": STANDBY,
+                "instance_state": state,
+            }
+
+        if not app_is_healthy(STANDBY):
+            logger.warning("Standby is running, but Mattermost is not healthy yet")
+            return {"status": "standby-not-healthy", "instance_id": STANDBY}
+
+        ec2.associate_address(
+            AllocationId=EIP_ALLOCATION_ID,
+            InstanceId=STANDBY,
+            AllowReassociation=True,
+        )
+        publish(
+            "Mattermost failover completed",
+            f"Mattermost passed its health check on standby {STANDBY}. "
+            "The Elastic IP has been reassigned. Verify externally.",
+        )
+        logger.info("Elastic IP reassigned to healthy standby %s", STANDBY)
+        return {"status": "failover-complete", "instance_id": STANDBY}
+
     except Exception as exc:
         logger.exception("Failover failed")
-        publish("Mattermost failover FAILED", f"Could not complete failover to standby {STANDBY}: {exc}. Manual recovery is required.")
+        publish(
+            "Mattermost failover FAILED",
+            f"Could not complete failover to standby {STANDBY}: {exc}. "
+            "Manual recovery is required.",
+        )
         raise
