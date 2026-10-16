@@ -59,3 +59,9 @@ Then check AWS Billing and confirm no retained snapshots, unattached EBS volumes
 - Mattermost Team Edition does not automatically become a multi-node HA cluster. This design is **application-instance recovery**, not an Enterprise clustered HA deployment.
 - Validate Mattermost S3 storage environment variable names and IAM-role credential support against the image version before applying.
 - This code has not been run through `terraform validate` in this environment because the Terraform CLI is not installed here. Run the validation commands above before any deployment.
+
+## GitHub Actions CI/CD
+
+The workflow in `.github/workflows/terraform-ci.yml` validates Terraform
+formatting and configuration. Pushes to `infra/mattermost-terraform` also
+run `terraform plan` through AWS OIDC. No automatic `terraform apply` is configured.
