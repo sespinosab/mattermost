@@ -61,6 +61,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
+    env:
+      TF_VAR_allowed_cidr: ${{ vars.ALLOWED_CIDR }}
+
     permissions:
       contents: read
       id-token: write
