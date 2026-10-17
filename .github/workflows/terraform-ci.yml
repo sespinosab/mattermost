@@ -48,6 +48,12 @@ jobs:
       - name: Check formatting
         run: terraform fmt -check -recursive .
 
+      - name: Static security analysis with Checkov
+        uses: bridgecrewio/checkov-action@v12.1347.0
+        with:
+          directory: terraform
+          config_file: terraform/.checkov.yml
+
       - name: Initialize without remote backend
         run: terraform init -backend=false -input=false -lockfile=readonly
 
@@ -63,6 +69,7 @@ jobs:
 
     env:
       TF_VAR_allowed_cidr: ${{ vars.ALLOWED_CIDR }}
+      TF_VAR_alert_email: ${{ vars.ALERT_EMAIL }}
 
     permissions:
       contents: read
