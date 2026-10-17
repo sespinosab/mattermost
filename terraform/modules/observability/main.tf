@@ -1,12 +1,15 @@
 resource "aws_cloudwatch_log_group" "application" {
+  #checkov:skip=CKV_AWS_158:CloudWatch Logs uses service-managed encryption; a customer KMS key adds avoidable cost for this demo.
+  #checkov:skip=CKV_AWS_338:Seven-day retention is intentional for a short-lived academic environment and its budget.
   name              = "/${var.name_prefix}/mattermost"
   retention_in_days = 7
   tags              = { Name = "${var.name_prefix}-application-logs" }
 }
 
 resource "aws_sns_topic" "alerts" {
-  name = "${var.name_prefix}-alerts"
-  tags = { Name = "${var.name_prefix}-alerts" }
+  name              = "${var.name_prefix}-alerts"
+  kms_master_key_id = "alias/aws/sns"
+  tags              = { Name = "${var.name_prefix}-alerts" }
 }
 
 resource "aws_sns_topic_subscription" "email" {

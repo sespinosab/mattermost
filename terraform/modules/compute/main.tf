@@ -109,10 +109,12 @@ locals {
   SCRIPT
 }
 
-# checkov:skip=CKV_AWS_88: A public address is needed for this low-cost demo without a NAT Gateway; inbound access is restricted to allowed_cidr.
 resource "aws_instance" "primary" {
+  #checkov:skip=CKV_AWS_88:A public address is needed for this low-cost demo without a NAT Gateway; inbound access is restricted to allowed_cidr.
+  #checkov:skip=CKV_AWS_126:Detailed monitoring is omitted to preserve the small academic-demo budget.
   ami                         = var.ami_id
   instance_type               = var.instance_type
+  ebs_optimized               = true
   subnet_id                   = var.public_subnet_a_id
   vpc_security_group_ids      = [var.application_security_group_id]
   iam_instance_profile        = aws_iam_instance_profile.this.name
@@ -141,10 +143,12 @@ resource "aws_instance" "primary" {
   depends_on = [aws_iam_role_policy_attachment.ssm_core, aws_iam_role_policy.application]
 }
 
-# checkov:skip=CKV_AWS_88: The standby needs outbound internet access during first boot to pull the public container image; inbound access is restricted to allowed_cidr.
 resource "aws_instance" "standby" {
+  #checkov:skip=CKV_AWS_88:The standby needs outbound internet access during first boot to pull the public container image; inbound access is restricted to allowed_cidr.
+  #checkov:skip=CKV_AWS_126:Detailed monitoring is omitted to preserve the small academic-demo budget.
   ami                         = var.ami_id
   instance_type               = var.instance_type
+  ebs_optimized               = true
   subnet_id                   = var.public_subnet_b_id
   vpc_security_group_ids      = [var.application_security_group_id]
   iam_instance_profile        = aws_iam_instance_profile.this.name

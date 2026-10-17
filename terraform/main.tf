@@ -1,5 +1,9 @@
 data "aws_availability_zones" "available" {
   state = "available"
+  filter {
+    name   = "zone-id"
+    values = ["use1-az1", "use1-az2"]
+  }
 }
 
 data "aws_ami" "amazon_linux" {
@@ -56,6 +60,7 @@ module "observability" {
 }
 
 resource "aws_ssm_parameter" "database_password" {
+  #checkov:skip=CKV_AWS_337:SecureString is encrypted with the AWS-managed SSM KMS key; a customer-managed key adds fixed cost to this academic demo.
   name        = "/${var.name_prefix}/database/password"
   description = "Mattermost RDS password. Read only by the EC2 instance role."
   type        = "SecureString"
@@ -132,4 +137,3 @@ resource "aws_cloudwatch_metric_alarm" "application_errors" {
   treat_missing_data  = "notBreaching"
   alarm_actions       = [module.observability.notification_topic_arn]
 }
-
