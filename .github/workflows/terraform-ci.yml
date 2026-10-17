@@ -48,11 +48,16 @@ jobs:
       - name: Check formatting
         run: terraform fmt -check -recursive .
 
-      - name: Static security analysis with Checkov
-        uses: bridgecrewio/checkov-action@v12.1347.0
+      - name: Set up Python for Checkov
+        uses: actions/setup-python@v7
         with:
-          directory: terraform
-          config_file: terraform/.checkov.yml
+          python-version: "3.11"
+
+      - name: Install Checkov
+        run: python -m pip install --disable-pip-version-check checkov==3.3.29
+
+      - name: Static security analysis with Checkov
+        run: checkov --directory . --config-file .checkov.yml --framework terraform
 
       - name: Initialize without remote backend
         run: terraform init -backend=false -input=false -lockfile=readonly
