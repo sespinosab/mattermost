@@ -98,7 +98,7 @@ resource "aws_lambda_function" "failover" {
   #checkov:skip=CKV_AWS_117:Function calls AWS control-plane APIs and is kept outside the VPC to avoid NAT/VPC endpoint costs; it does not serve public inbound traffic.
   #checkov:skip=CKV_AWS_272:This academic demo has no AWS Signer signing profile or release-signing pipeline; configure code signing for production.
   #checkov:skip=CKV_AWS_115:Reserved concurrency is temporarily disabled because the AWS account-level concurrency quota is restricted to 10.
-  
+
   function_name    = "${var.name_prefix}-failover"
   role             = aws_iam_role.lambda.arn
   handler          = "failover.lambda_handler"
