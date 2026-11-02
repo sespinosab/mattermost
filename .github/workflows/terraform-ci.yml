@@ -96,10 +96,10 @@ jobs:
       - name: Configure AWS credentials with OIDC
         uses: aws-actions/configure-aws-credentials@v6.3.0
         with:
-          role-to-assume: arn:aws:iam::786759548615:role/MattermostGitHubTerraformPlan
+          role-to-assume: arn:aws:iam::506305355048:role/MattermostGitHubTerraformPlan
           aws-region: us-east-1
           role-session-name: MattermostTerraformPlan
-          allowed-account-ids: "786759548615"
+          allowed-account-ids: "506305355048"
 
       - name: Verify AWS identity
         run: aws sts get-caller-identity
@@ -108,4 +108,62 @@ jobs:
         run: terraform init -input=false -lockfile=readonly
 
       - name: Generate Terraform plan
-        run: terraform plan -input=false -no-color -lock-timeout=2m
+        run: terraform plan -input=false -no-color -lock-timeout=2m -out=tfplan
+
+      - name: Upload Terraform plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: mattermost-tfplan
+          path: terraform/tfplan
+          retention-days: 1
+
+    
+  terraform-apply:
+    name: "Terraform Apply using AWS OIDC"
+    if: ${{ github.ref == 'refs/heads/infra/mattermost-terraform' && github.event_name == 'workflow_dispatch' }}
+    needs: terraform-plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    environment:
+      name: mattermost-production
+
+    permissions:
+      contents: read
+      id-token: write
+
+    defaults:
+      run:
+        working-directory: terraform
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: "1.16.6"
+
+      - name: Configure AWS credentials with OIDC
+        uses: aws-actions/configure-aws-credentials@v6.3.0
+        with:
+          role-to-assume: arn:aws:iam::506305355048:role/MattermostGitHubTerraformApply
+          aws-region: us-east-1
+          role-session-name: MattermostTerraformApply
+          allowed-account-ids: "506305355048"
+
+      - name: Verify AWS identity
+        run: aws sts get-caller-identity
+
+      - name: Initialize remote backend
+        run: terraform init -input=false -lockfile=readonly
+
+      - name: Download Terraform plan
+        uses: actions/download-artifact@v4
+        with:
+          name: mattermost-tfplan
+          path: terraform
+
+      - name: Apply Terraform plan
+        run: terraform apply -input=false -no-color tfplan
