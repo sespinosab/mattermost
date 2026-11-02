@@ -288,7 +288,7 @@ Se ejecutó el script `traffic_generator.sh` enviando peticiones recurrentes a l
 #### 3.3.2 Tablero de Grafana en Estado Verde / Carga Nominal
 Visualización completa del dashboard en Grafana bajo operación nominal: disponibilidad al 100%, presupuesto de error intacto, curvas de tráfico y latencia activas, y métricas de saturación normales:
 
-![Dashboard de Grafana en Estado Verde / Carga Nominal](imagenes/evidencia-grafana-carga-nominal.png)
+![Dashboard de Grafana en Estado Verde / Carga Nominal](imagenes/evidencia-grafana-carga-nominal.jpeg)
 
 ---
 
