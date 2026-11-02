@@ -40,16 +40,16 @@ groups:
           clamp_min(1 - job:mattermost_availability:sli5m, 0)
 
       # Saldo restante de Error Budget en Tiempo Real:
-      # SLO Objetivo = 99.5% (Margen tolerable de error = 0.5% = 0.005)
+      # SLO Objetivo = 99.9% (Margen tolerable de error = 0.1% = 0.001)
       # Si availability es 1.0 (100%) -> Saldo = 100%
-      # Si availability cae a 0.995 (99.5%) -> Saldo = 0% (Presupuesto agotado)
-      # Durante una caída (availability < 0.995) -> Saldo = 0% (Zona Crítica)
+      # Si availability cae a 0.999 (99.9%) -> Saldo = 0% (Presupuesto agotado)
+      # Durante una caída (availability < 0.999) -> Saldo = 0% (Zona Crítica)
       # Se calcula sobre sli5m para reflejar el impacto visual inmediato del incidente.
       - record: job:mattermost_error_budget_remaining:percent
         expr: |
           clamp_max(
             clamp_min(
-              ( (job:mattermost_availability:sli5m - 0.995) / (1 - 0.995) ) * 100,
+              ( (job:mattermost_availability:sli5m - 0.999) / (1 - 0.999) ) * 100,
               0
             ),
             100

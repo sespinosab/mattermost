@@ -62,8 +62,8 @@
             "mode": "absolute",
             "steps": [
               { "color": "red", "value": null },
-              { "color": "orange", "value": 98 },
-              { "color": "green", "value": 99.5 }
+              { "color": "orange", "value": 99.5 },
+              { "color": "green", "value": 99.9 }
             ]
           }
         }
@@ -71,7 +71,7 @@
     },
     {
       "id": 2,
-      "title": "Saldo Restante de Error Budget (SLO: 99.5%)",
+      "title": "Saldo Restante de Error Budget (SLO: 99.9%)",
       "type": "gauge",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "h": 5, "w": 6, "x": 6, "y": 1 },
@@ -509,5 +509,5 @@
   "timezone": "browser",
   "title": "Mattermost SRE — Golden Signals & SLOs",
   "uid": "mattermost-sre-overview",
-  "version": 6
+  "version": 7
 }

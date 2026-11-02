@@ -3,17 +3,17 @@ groups:
     rules:
       # =====================================================================
       # ALERTAS DE BURN RATE (SRE Multi-Window, Multi-Burn-Rate)
-      # SLO Target: 99.5% disponibilidad
-      # Error Budget Allowed: 0.5% (0.005)
+      # SLO Target: 99.9% disponibilidad
+      # Error Budget Allowed: 0.1% (0.001)
       # Basado en: Google SRE Workbook - Chapter 5
       # =====================================================================
 
       # ─── 1. CRÍTICO: Burn Rate > 14.4x (Page / Inmediata) ────────────────
       # Consume el Error Budget en ~2 días. Requiere respuesta inmediata.
-      # Señal: error_rate > 14.4 * 0.005 = 7.2% de peticiones fallando
+      # Señal: error_rate > 14.4 * 0.001 = 1.44% de peticiones fallando
       - alert: MattermostHighBurnRateCritical
         expr: |
-          job:mattermost_error_rate:ratio5m > (14.4 * (1 - 0.995))
+          job:mattermost_error_rate:ratio5m > (14.4 * (1 - 0.999))
         for: 2m
         labels:
           severity: critical
@@ -28,10 +28,10 @@ groups:
 
       # ─── 2. ADVERTENCIA: Burn Rate > 6x (Ticket / Alertar equipo) ─────────
       # Consume el Error Budget en ~5 días. Requiere atención en horas.
-      # Señal: error_rate > 6 * 0.005 = 3% de peticiones fallando por >5min
+      # Señal: error_rate > 6 * 0.001 = 0.6% de peticiones fallando por >5min
       - alert: MattermostElevatedBurnRateWarning
         expr: |
-          job:mattermost_error_rate:ratio5m > (6 * (1 - 0.995))
+          job:mattermost_error_rate:ratio5m > (6 * (1 - 0.999))
         for: 5m
         labels:
           severity: warning

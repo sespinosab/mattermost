@@ -15,7 +15,11 @@
 
 ## 2. Definición de SLIs, SLOs y Error Budget
 
-Siguiendo las directrices del marco de trabajo de Google Site Reliability Engineering (SRE), se definieron dos Indicadores de Nivel de Servicio (SLIs) cuantitativos que capturan la confiabilidad y la experiencia del usuario final sobre la plataforma Mattermost.
+Para evaluar cuantitativamente la confiabilidad de Mattermost, adoptamos el principio fundamental del marco de trabajo de **Google Site Reliability Engineering (SRE)**: *todo indicador es una proporción de eventos exitosos sobre el total de eventos evaluados*.
+
+$$\text{SLI} = \frac{\text{Eventos Buenos}}{\text{Eventos Totales}} \times 100\%$$
+
+A partir de esta base simple y rigurosa, se definieron los dos compromisos de servicio (SLOs) para la plataforma.
 
 ---
 
@@ -23,36 +27,32 @@ Siguiendo las directrices del marco de trabajo de Google Site Reliability Engine
 
 #### SLI 1: Disponibilidad del Servicio (Availability SLI)
 
-- **Definición Conceptual:** Proporción de revisiones de salud y peticiones HTTP atendidas con éxito (código de respuesta `2xx`) sobre el total de revisiones realizadas por el sistema de sondeo sintético (`Blackbox Exporter`).
-- **Formulación Matemática:**
-  $$\text{SLI}_{\text{Disponibilidad}} = \frac{\text{Sondeos HTTP Exitosos (200 OK)}}{\text{Total de Sondeos Realizados}} \times 100\%$$
+- **Concepto:** Mide el porcentaje de revisiones periódicas de salud enviadas a Mattermost que responden con éxito (código HTTP `200 OK`).
+- **Fórmula Matemática:**
+  $$\text{SLI}_{\text{Disponibilidad}} = \frac{\text{Sondeos Exitosos (HTTP 200)}}{\text{Total de Sondeos Realizados}} \times 100\%$$
 
-  Formalmente, sobre una ventana temporal de observación $W$:
-  $$\text{SLI}_{\text{disp}}(W) = \frac{\sum_{t \in W} S_{\text{exitosos}}(t)}{\sum_{t \in W} S_{\text{totales}}(t)} \times 100\%$$
-
-- **Interpretación Práctica:** *"De cada 100 verificaciones periódicas de disponibilidad enviadas al servicio, cuántas respondieron satisfactoriamente."*
+- **Interpretación en Lenguaje Simple:**
+  *"De cada 100 verificaciones de salud realizadas al servicio en los últimos 5 minutos, cuántas respondieron correctamente."*
 - **Expresión en PromQL (Prometheus):**
   ```promql
-  # Promedio de disponibilidad en ventana móvil de 5 minutos (1 = UP, 0 = DOWN)
+  # Promedio de disponibilidad en ventana de 5 minutos (1 = UP, 0 = DOWN)
   job:mattermost_availability:sli5m =
     avg_over_time(probe_success{job="blackbox_http_mattermost"}[5m])
   ```
 
 ---
 
-#### SLI 2: Rendimiento y Latencia Percentilar P95 (Latency SLI)
+#### SLI 2: Rendimiento y Latencia (Latency SLI)
 
-- **Definición Conceptual:** Tiempo máximo de respuesta en el cual se atiende al menos el $95\%$ de las peticiones sintéticas hacia la API REST de Mattermost, garantizando una interacción fluida en el chat.
-- **Formulación Matemática:**
-  $$\text{SLI}_{\text{Latencia P95}} = t_{95} \quad \text{tal que} \quad P(\text{Tiempo de Respuesta} \le t_{95}) = 0.95$$
+- **Concepto:** Mide el porcentaje de peticiones atendidas de forma rápida (en un tiempo igual o inferior al umbral de $250\text{ ms}$).
+- **Fórmula Matemática:**
+  $$\text{SLI}_{\text{Latencia}} = \frac{\text{Peticiones Rápidas (tiempo } \le 250\text{ ms)}}{\text{Total de Peticiones Atendidas}} \times 100\%$$
 
-  Es decir, evaluamos el cumplimiento de la cota de tiempo:
-  $$\text{Tasa de Cumplimiento de Latencia} = \frac{\text{Peticiones con Latencia } \le 250\text{ ms}}{\text{Total de Peticiones Válidas}} \times 100\% \ge 95\%$$
-
-- **Interpretación Práctica:** *"Si ordenamos todas las peticiones de menor a mayor duración, el 95% de ellas se completó en un tiempo igual o menor a 250 milisegundos."*
+- **Interpretación en Lenguaje Simple:**
+  *"Si un usuario envía un mensaje o consulta un canal, el 95% de las veces debe recibir respuesta en menos de un cuarto de segundo (250 ms)."*
 - **Expresión en PromQL (Prometheus):**
   ```promql
-  # Cálculo del percentil 95 sobre la duración de peticiones HTTP en 5 minutos
+  # Percentil 95 de duración de peticiones HTTP en 5 minutos
   job:mattermost_latency_p95:seconds5m =
     histogram_quantile(0.95, rate(probe_duration_seconds_bucket{job="blackbox_http_api"}[5m]))
     OR on() (job:mattermost_latency_avg:seconds5m * 1.25)
@@ -60,30 +60,34 @@ Siguiendo las directrices del marco de trabajo de Google Site Reliability Engine
 
 ---
 
-### 2.2 Justificación Técnica de las Metas de los SLOs
+### 2.2 Metas de los SLOs y Justificación Técnica
 
-| Métrica / Parámetro | Objetivo (SLO) | Ventana de Evaluación | Justificación Técnica de Ingeniería |
+| Compromiso / SLI | Meta (SLO) | Ventana Temporal | Justificación Técnica de Ingeniería |
 |---|---|---|---|
-| **Disponibilidad** | **$\ge 99.5\%$** | 30 días móviles | Mattermost es una herramienta colaborativa de comunicación sincrónica. Un SLO del $99.5\%$ ("dos nueves y medio") permite una indisponibilidad acumulada máxima de **$3.6$ horas al mes** ($216$ minutos). Este margen es técnica y económicamente viable para una arquitectura contenerizada en instancia única, evitando los costos elevados de redundancia geográfica activa. |
-| **Latencia P95** | **$\le 250\text{ ms}$** | 5 minutos móviles | De acuerdo con los estudios de usabilidad de Nielsen Norman Group, retardos inferiores a $300\text{ ms}$ son percibidos por los usuarios humanos como una respuesta prácticamente instantánea. Mantener el percentil $95$ por debajo de $250\text{ ms}$ asegura fluidez al enviar mensajes y recibir eventos vía WebSocket. |
+| **Disponibilidad** | **$\ge 99.9\%$** | 30 días móviles | Mattermost es una herramienta colaborativa de comunicación sincrónica crítica. Un SLO del $99.9\%$ ("tres nueves") permite una indisponibilidad acumulada máxima de tan solo **$43.2$ minutos al mes** ($0.1\%$). Este objetivo garantiza una operación continua y confiable sin interrupciones perceptibles para los equipos de trabajo. |
+| **Latencia P95** | **$\le 250\text{ ms}$** | 5 minutos móviles | Según los estándares de usabilidad web (Nielsen Norman Group), retardos inferiores a $300\text{ ms}$ son percibidos como instantáneos. Mantener el percentil $95$ por debajo de $250\text{ ms}$ asegura fluidez al enviar mensajes y recibir eventos en tiempo real. |
 
 ---
 
-### 2.3 Formulación Matemática y Política de Error Budget
+### 2.3 Formulación Matemática del Error Budget (Presupuesto de Error)
 
-#### 1. Cálculo del Presupuesto de Error Total
-El **Presupuesto de Error ($EB_{\text{total}}$)** es el margen de fallo tolerable antes de incumplir el compromiso de servicio:
-$$EB_{\text{total}} = 100\% - \text{SLO} = 100\% - 99.5\% = 0.5\% \quad (\approx 216\text{ minutos al mes})$$
+El **Error Budget** es el margen de fallas que el equipo tiene permitido antes de romper el acuerdo de servicio.
 
-#### 2. Cálculo del Saldo Restante en Tiempo Real
-El saldo porcentual de presupuesto que le resta al equipo se calcula comparando el rendimiento actual con el umbral admisible:
-$$\text{Saldo Restante de Error Budget (\%)} = \left[ \frac{\text{SLI actual} - \text{SLO}}{100\% - \text{SLO}} \right] \times 100\% = \left[ \frac{\text{SLI actual} - 0.995}{0.005} \right] \times 100\%$$
+#### 1. Presupuesto Total Permitido
+$$\text{Presupuesto Total} = 100\% - \text{SLO} = 100\% - 99.9\% = \mathbf{0.1\%}$$
 
-**Casos de evaluación:**
-- Si $\text{SLI} = 100\% \implies \text{Saldo} = \frac{1.000 - 0.995}{0.005} \times 100\% = \mathbf{100\%}$ (Presupuesto intacto, zona verde).
-- Si $\text{SLI} = 99.75\% \implies \text{Saldo} = \frac{0.9975 - 0.995}{0.005} \times 100\% = \mathbf{50\%}$ (Consumo de la mitad del margen).
-- Si $\text{SLI} = 99.5\% \implies \text{Saldo} = \frac{0.995 - 0.995}{0.005} \times 100\% = \mathbf{0\%}$ (Presupuesto totalmente agotado).
-- Si $\text{SLI} < 99.5\% \implies$ Se acota inferiormente a $\mathbf{0\%}$ mediante la función $\text{clamp}$.
+En un mes de 30 días ($43.200$ minutos en total), el $0.1\%$ equivale a:
+$$\text{Tiempo Máximo de Falla Admisible} = 43.200\text{ min} \times 0.001 = \mathbf{43.2\text{ minutos al mes}}$$
+
+#### 2. Saldo Restante en Tiempo Real
+Representa qué porcentaje del presupuesto inicial de $43.2$ minutos aún tenemos disponible:
+
+$$\text{Saldo Restante (\%)} = \frac{\text{SLI actual} - \text{SLO}}{100\% - \text{SLO}} \times 100\% = \frac{\text{SLI actual} - 99.9\%}{0.1\%} \times 100\%$$
+
+**Ejemplos prácticos de evaluación:**
+- **Operación Perfecta:** Si $\text{SLI} = 100\% \implies \text{Saldo} = \frac{100 - 99.9}{0.1} \times 100\% = \mathbf{100\%}$ (Presupuesto intacto, zona verde).
+- **Consumo Parcial:** Si $\text{SLI} = 99.95\% \implies \text{Saldo} = \frac{99.95 - 99.9}{0.1} \times 100\% = \mathbf{50\%}$ (Se ha consumido la mitad del margen).
+- **Presupuesto Agotado:** Si $\text{SLI} = 99.9\% \implies \text{Saldo} = \frac{99.9 - 99.9}{0.1} \times 100\% = \mathbf{0\%}$ (Alerta roja, congelamiento de cambios).
 
 **Expresión PromQL implementada en Prometheus:**
 ```promql
@@ -91,7 +95,7 @@ $$\text{Saldo Restante de Error Budget (\%)} = \left[ \frac{\text{SLI actual} - 
 job:mattermost_error_budget_remaining:percent =
   clamp_max(
     clamp_min(
-      ( (job:mattermost_availability:sli5m - 0.995) / (1 - 0.995) ) * 100,
+      ( (job:mattermost_availability:sli5m - 0.999) / (1 - 0.999) ) * 100,
       0
     ),
     100
@@ -100,20 +104,27 @@ job:mattermost_error_budget_remaining:percent =
 
 ---
 
-### 2.4 Fundamento Matemático del Burn Rate (Tasa de Consumo)
+### 2.4 Fundamento Matemático del Burn Rate (Velocímetro de Consumo)
 
-El **Burn Rate ($BR$)** mide la velocidad a la que se consume el Error Budget respecto al ritmo normal:
-$$\text{Burn Rate} = \frac{\text{Tasa de Error Observada}}{\text{Margen de Error Permitido}} = \frac{1 - \text{SLI}}{1 - \text{SLO}} = \frac{1 - \text{SLI}}{0.005}$$
+El **Burn Rate ($BR$)** mide la *velocidad* a la que se consume el presupuesto de error en comparación con el ritmo normal:
 
-| Nivel de Alerta | Burn Rate ($BR$) | Tasa de Error Equivalente | Tiempo para Agotar el 100% del Presupuesto | Acción Operativa |
+$$\text{Burn Rate} = \frac{\text{Tasa de Error Actual}}{\text{Tasa de Error Permitida (0.1\%)}} = \frac{1 - \text{SLI}}{0.001}$$
+
+- **$BR = 1.0\times$ (Ritmo Normal):** Consumiríamos el 100% del presupuesto exactamente en 30 días.
+- **$BR = 6.0\times$ (Alerta de Advertencia - P2):** Estamos fallando 6 veces más rápido de lo normal. El presupuesto de todo el mes se agotará en tan solo **5 días** ($30 / 6$).
+- **$BR = 14.4\times$ (Alerta Crítica - P1):** Emergencia severa. El presupuesto mensual se agotará en menos de **48 horas (2 días)** ($30 / 14.4$). Requiere atención inmediata del ingeniero de guardia.
+
+| Nivel de Alerta | Burn Rate ($BR$) | Tasa de Error Equivalente | Tiempo para Agotar Presupuesto | Acción Operativa |
 |---|---|---|---|---|
-| **Normal** | $1.0\times$ | $0.5\%$ de fallos | $30\text{ días} / 1.0 = \mathbf{30\text{ días}}$ | Ninguna (Operación Nominal). |
-| **Advertencia (P2)** | $6.0\times$ | $3.0\%$ de fallos | $30\text{ días} / 6.0 = \mathbf{5\text{ días}}$ (Consume 10% en 12h) | Generar ticket, revisar cambios recientes. |
-| **Crítica (P1)** | $14.4\times$ | $7.2\%$ de fallos | $30\text{ días} / 14.4 \approx \mathbf{2\text{ días}}$ (Consume 5% en 1h) | **Paginación inmediata al SRE On-Call**. |
+| **Normal** | $1.0\times$ | $0.1\%$ de fallos | $30\text{ días}$ | Operación nominal sin restricciones. |
+| **Advertencia (P2)** | $6.0\times$ | $0.6\%$ de fallos | $5\text{ días}$ (Consume 10% en 12h) | Revisar logs y despliegues recientes. |
+| **Crítica (P1)** | $14.4\times$ | $1.44\%$ de fallos | $\approx 2\text{ días}$ (Consume 5% en 1h) | **Paginación inmediata (On-Call SRE)**. |
 
 ---
 
 ### 2.5 Política Documentada de Error Budget (Error Budget Policy)
+
+Define las reglas de juego y acuerdos operativos entre el equipo de Desarrollo y Operaciones según el saldo de presupuesto restante:
 
 ```text
 +-----------------------------------------------------------------------------------+
@@ -231,11 +242,9 @@ La solución implementa una arquitectura desacoplada y modular desplegada en con
 
 ### 3.2 Despliegue y Puesta en Marcha
 
-Para iniciar toda la infraestructura de observabilidad:
+Para iniciar toda la infraestructura de observabilidad (Estos comandos se ejecutan en la raíz del proyecto, donde se encuentra el archivo `docker-compose.yml`):
 
 ```bash
-cd /home/sexdeg/Proyectos/mattermost
-
 # 1. Asegurar que el stack principal esté arriba
 docker compose up -d
 
@@ -292,7 +301,7 @@ En cumplimiento del estándar SRE de Google (*Site Reliability Workbook, Chapter
 ```yaml
 # 1. Alerta Crítica Inmediata (Burn Rate > 14.4x - Agota el 100% del Error Budget en ~2 días)
 - alert: MattermostHighBurnRateCritical
-  expr: job:mattermost_error_rate:ratio5m > (14.4 * (1 - 0.995))
+  expr: job:mattermost_error_rate:ratio5m > (14.4 * (1 - 0.999))
   for: 2m
   labels:
     severity: critical
@@ -304,7 +313,7 @@ En cumplimiento del estándar SRE de Google (*Site Reliability Workbook, Chapter
 
 # 2. Alerta de Advertencia (Burn Rate > 6.0x - Consume >10% del Error Budget en 12 horas)
 - alert: MattermostElevatedBurnRateWarning
-  expr: job:mattermost_error_rate:ratio5m > (6 * (1 - 0.995))
+  expr: job:mattermost_error_rate:ratio5m > (6 * (1 - 0.999))
   for: 5m
   labels:
     severity: warning
@@ -442,7 +451,7 @@ El procedimiento operativo estandarizado para atender fallas en la plataforma se
 4. **Verificación y Cierre:**
    - Confirmar respuesta `200 OK` en el endpoint `/api/v4/system/ping`.
    - Comprobar que los objetivos de Prometheus retornen a `[UP]` y las alertas pasen a `INACTIVE`.
-   - Monitorear durante 5 minutos en Grafana la recuperación del SLI de disponibilidad hacia `>= 99.5%`.
+   - Monitorear durante 5 minutos en Grafana la recuperación del SLI de disponibilidad hacia $\ge 99.9\%$.
 
 ---
 

@@ -4,7 +4,7 @@
 
 **Nivel de Criticidad:** Tier 1 (Servicio Crítico de Producción)
 
-**Objetivo de Confiabilidad (SLO):** Disponibilidad $\ge 99.5\%$ | Latencia $P_{95} \le 250\text{ ms}$
+**Objetivo de Confiabilidad (SLO):** Disponibilidad $\ge 99.9\%$ | Latencia $P_{95} \le 250\text{ ms}$
 
 **Monitoreo y Alertas:** Prometheus & Grafana Stack (`/observability`)
 
@@ -171,7 +171,7 @@ Tras ejecutar cualquier acción de remediación:
    "
    ```
 3. **Validación en Grafana durante 5 minutos:**
-   - El **SLI de disponibilidad** debe volver y estabilizarse sobre el **$99.5\%$**.
+   - El **SLI de disponibilidad** debe volver y estabilizarse sobre el **$99.9\%$**.
    - El panel **"Estado del Servicio"** debe marcar **UP ✅**.
    - Las alertas en [http://localhost:9090/alerts](http://localhost:9090/alerts) deben transicionar a **INACTIVE**.
 
