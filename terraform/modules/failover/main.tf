@@ -104,7 +104,7 @@ resource "aws_lambda_function" "failover" {
   filename                       = data.archive_file.lambda.output_path
   source_code_hash               = data.archive_file.lambda.output_base64sha256
   timeout                        = 240
-  #reserved_concurrent_executions = 1
+  # reserved_concurrent_executions = 1
   memory_size                    = 128
 
   dead_letter_config {
