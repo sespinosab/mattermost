@@ -97,15 +97,15 @@ resource "aws_lambda_function" "failover" {
   #checkov:skip=CKV_AWS_173:Environment values contain only resource identifiers and an SNS ARN, no credentials; secrets remain in SSM SecureString.
   #checkov:skip=CKV_AWS_117:Function calls AWS control-plane APIs and is kept outside the VPC to avoid NAT/VPC endpoint costs; it does not serve public inbound traffic.
   #checkov:skip=CKV_AWS_272:This academic demo has no AWS Signer signing profile or release-signing pipeline; configure code signing for production.
-  function_name                  = "${var.name_prefix}-failover"
-  role                           = aws_iam_role.lambda.arn
-  handler                        = "failover.lambda_handler"
-  runtime                        = "python3.12"
-  filename                       = data.archive_file.lambda.output_path
-  source_code_hash               = data.archive_file.lambda.output_base64sha256
-  timeout                        = 240
+  function_name    = "${var.name_prefix}-failover"
+  role             = aws_iam_role.lambda.arn
+  handler          = "failover.lambda_handler"
+  runtime          = "python3.12"
+  filename         = data.archive_file.lambda.output_path
+  source_code_hash = data.archive_file.lambda.output_base64sha256
+  timeout          = 240
   # reserved_concurrent_executions = 1
-  memory_size                    = 128
+  memory_size = 128
 
   dead_letter_config {
     target_arn = aws_sqs_queue.dlq.arn
