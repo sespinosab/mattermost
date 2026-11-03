@@ -138,3 +138,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+  deploy:
+    name: 5. Deploy to AWS EC2
+    needs: publish
+    runs-on: ubuntu-latest
