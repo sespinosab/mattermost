@@ -179,6 +179,14 @@ jobs:
         run: |
           set -euo pipefail
 
+          # Validate environment configuration
+          : "${DB_HOST:?DB_HOST is missing or empty in GitHub Environment}"
+          : "${DB_PORT:?DB_PORT is missing or empty in GitHub Environment}"
+          : "${DB_NAME:?DB_NAME is missing or empty in GitHub Environment}"
+          : "${DB_USER:?DB_USER is missing or empty in GitHub Environment}"
+          : "${DB_PASSWORD:?DB_PASSWORD is missing or empty in GitHub Environment}"
+          : "${MM_SITE_URL:?MM_SITE_URL is missing or empty in GitHub Environment}"
+
           # 1. Calculate the image tag published by the previous job
           SHORT_SHA="${COMMIT_SHA:0:7}"
           MATTERMOST_IMAGE="ghcr.io/sespinosab/mattermost:sha-${SHORT_SHA}"
