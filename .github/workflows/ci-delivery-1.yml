@@ -153,7 +153,7 @@ jobs:
 
     if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main')
 
-    environment: mattermost-app-production
+    environment: mattermost-ec2-production
 
     permissions:
       contents: read
