@@ -33,6 +33,14 @@ jobs:
           failure-threshold: error
 
       - name: Validate Docker Compose Configuration
+        env:
+          MATTERMOST_IMAGE: ghcr.io/sespinosab/mattermost:latest
+          DB_USER: test_user
+          DB_PASSWORD: test_password
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_NAME: mattermost_test
+          MM_SITE_URL: http://localhost:8065
         run: docker compose -f docker-compose.yml config
 
   build:
