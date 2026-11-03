@@ -127,25 +127,29 @@ $$\text{Burn Rate} = \frac{\text{Tasa de Error Actual}}{\text{Tasa de Error Perm
 Define las reglas de juego y acuerdos operativos entre el equipo de Desarrollo y Operaciones según el saldo de presupuesto restante:
 
 ```text
-+-----------------------------------------------------------------------------------+
-|                           POLÍTICA DE ERROR BUDGET                                |
-+------------------+---------------------+------------------------------------------+
-| Saldo Restante   | Burn Rate Asociado  | Acciones Operativas y Acuerdos           |
-+------------------+---------------------+------------------------------------------+
-| 100% - 50%       | <= 1.0x (Normal)    | Estado Óptimo: Despliegues continuos     |
-| (Zona Verde)     |                     | permitidos sin restricciones adicionales.|
-+------------------+---------------------+------------------------------------------+
-| 50% - 20%        | 1.0x - 6.0x         | Estado de Advertencia: Los despliegues   |
-| (Zona Amarilla)  |                     | requieren aprobación y revisión de tests.|
-+------------------+---------------------+------------------------------------------+
-| 20% - 1%         | > 6.0x (Acelerado)  | Pre-Freeze: Se suspenden despliegues de  |
-| (Zona Naranja)   |                     | características no esenciales. El 50% de |
-|                  |                     | capacidad se orienta a estabilidad.      |
-+------------------+---------------------+------------------------------------------+
-| <= 0%            | > 14.4x (Crítico)   | FEATURE FREEZE TOTAL: Se detienen todos  |
-| (Zona Roja)      |                     | los releases de producto. El equipo se   |
-|                  |                     | dedica 100% a confiabilidad y bugs.      |
-+------------------+---------------------+------------------------------------------+
++-------------------------------------------------------------------------+
+|                        POLÍTICA DE ERROR BUDGET                         |
++----------------+--------------------+-----------------------------------+
+| Saldo Restante | Burn Rate Asociado | Acciones Operativas y Acuerdos    |
++----------------+--------------------+-----------------------------------+
+| 100% - 50%     | <= 1.0x (Normal)   | Estado Óptimo: Despliegues        |
+| (Zona Verde)   |                    | continuos permitidos sin          |
+|                |                    | restricciones extras.             |
++----------------+--------------------+-----------------------------------+
+| 50% - 20%      | 1.0x - 6.0x        | Estado de Advertencia:            |
+| (Zona Amarilla)|                    | Despliegues requieren aprobación  |
+|                |                    | y revisión de tests.              |
++----------------+--------------------+-----------------------------------+
+| 20% - 1%       | > 6.0x (Acelerado) | Pre-Freeze: Se suspenden          |
+| (Zona Naranja) |                    | despliegues de características no |
+|                |                    | esenciales. El 50% de capacidad   |
+|                |                    | se orienta a estabilidad.         |
++----------------+--------------------+-----------------------------------+
+| <= 0%          | > 14.4x (Crítico)  | FEATURE FREEZE TOTAL: Se detienen |
+| (Zona Roja)    |                    | todos los releases de producto.   |
+|                |                    | El equipo se dedica 100% a la     |
+|                |                    | confiabilidad y bugs.             |
++----------------+--------------------+-----------------------------------+
 ```
 
 ---
@@ -159,70 +163,67 @@ La solución implementa una arquitectura desacoplada y modular desplegada en con
 #### Diagrama de Arquitectura de Observabilidad
 
 ```text
-===================================================================================================
-                                      ARQUITECTURA DE OBSERVABILIDAD SRE
-===================================================================================================
+===========================================================================
+                    ARQUITECTURA DE OBSERVABILIDAD SRE
+===========================================================================
 
  [ Clientes / Usuarios ]       [ Scripts de Prueba SRE ]
             │                              │
-            │ HTTP :8065                   │ HTTP / API Probes (:8065)
+            │ HTTP :8065                   │ HTTP/API Probes
             ▼                              ▼
  ┌───────────────────────────────────────────────────────────────┐
- │                   mattermost-app (Core Engine)                │
- │                 - Puerto HTTP: 8065 | Metrics: 8067           │
+ │                 mattermost-app (Core Engine)                  │
+ │                - Ptos: HTTP 8065 | Metrics 8067               │
  └──────────────┬────────────────────────────────┬───────────────┘
                 │                                │
-                │ SQL :5432                      │ HTTP GET /api/v4/system/ping
-                ▼                                ▼
+                │ SQL :5432                      │ GET /api/v4/
+                ▼                                ▼ system/ping
  ┌──────────────────────────────┐ ┌──────────────────────────────┐
  │        mattermost-db         │ │     mattermost-blackbox      │
- │     (PostgreSQL 15 DB)       │ │     (Blackbox Exporter)      │
- │        Puerto: 5432          │ │     Puerto Host: 9115        │
+ │      (PostgreSQL 15 DB)      │ │     (Blackbox Exporter)      │
+ │         Puerto: 5432         │ │      Puerto Host: 9115       │
  └──────────────┬───────────────┘ └──────────────┬───────────────┘
                 │                                │
                 │ Scrape SQL                     │ Scrape /probe
                 ▼                                │
  ┌──────────────────────────────┐                │
  │ mattermost-postgres-exporter │                │
- │     (Postgres Exporter)      │                │
- │      Puerto Host: 9187       │                │
+ │      (Postgres Exporter)     │                │
+ │       Puerto Host: 9187      │                │
  └──────────────┬───────────────┘                │
                 │                                │
-                │                                │
  ┌──────────────┴───────────────┐                │
- │    mattermost-node-exporter  │                │
- │     (Host Hardware Telemetry)│                │
+ │   mattermost-node-exporter   │                │
+ │  (Host Hardware Telemetry)   │                │
  │      Puerto Host: 9100       │                │
  └──────────────┬───────────────┘                │
                 │                                │
  ┌──────────────┴───────────────┐                │
  │     mattermost-cadvisor      │                │
- │     (cGroup Container Stats) │                │
- │      Puerto Host: 8085       │                │
+ │    (cGroup Container Stats)  │                │
+ │       Puerto Host: 8085      │                │
  └──────────────┬───────────────┘                │
                 │                                │
                 │  Scrape HTTP Metrics (:9090)   │
-                └────────────────► ┬ ◄───────────┘
-                                   │
-                                   ▼
-                 ┌──────────────────────────────────┐
-                 │      mattermost-prometheus       │
-                 │      (Prometheus Server :9090)   │
-                 │  - TSDB Storage Engine           │
-                 │  - Evaluador de Reglas SLI/SLO   │
-                 │  - Alertas Multi-Burn Rate       │
-                 └─────────────────┬────────────────┘
-                                   │
-                                   │ Consultas PromQL (:3000)
-                                   ▼
-                 ┌──────────────────────────────────┐
-                 │       mattermost-grafana         │
-                 │       (Grafana Server :3000)     │
-                 │  - Dashboard 4 Golden Signals    │
-                 │  - Visualizador de SLIs / SLOs   │
-                 │  - Saldo en Vivo de Error Budget │
-                 └──────────────────────────────────┘
-===================================================================================================
+                └───────────────► ┬ ◄────────────┘
+                                  │
+                                  ▼
+                ┌─────────────────────────────────┐
+                │      mattermost-prometheus      │
+                │    (Prometheus Server :9090)    │
+                │  - TSDB Storage Engine          │
+                │  - Reglas SLI/SLO y Alertas     │
+                └───────────────┬─────────────────┘
+                                │
+                                │ Consultas PromQL
+                                ▼
+                ┌─────────────────────────────────┐
+                │       mattermost-grafana        │
+                │      (Grafana Server :3000)     │
+                │  - Dashboard Golden Signals     │
+                │  - Visualizador Error Budget    │
+                └─────────────────────────────────┘
+===========================================================================
 ```
 
 #### Componentes de la Pila y Distribución de Puertos
@@ -482,35 +483,35 @@ En cumplimiento de los requerimientos de entrega, todos los manifiestos de infra
 
 ```text
 observability/
-├── INFORME_ENTREGABLE_3.md                            # Informe técnico consolidado de la entrega
-├── docker-compose.monitoring.yml                      # Stack de Prometheus, Grafana, cAdvisor, Exporters
+├── INFORME_ENTREGABLE_3.md                  # Documentación técnica SRE
+├── docker-compose.monitoring.yml            # Stack de observabilidad
 ├── blackbox/
-│   └── config.yml                                     # Módulos de sondeo HTTP y TCP para Blackbox Exporter
-├── imagenes/                                          # Evidencias visuales de pruebas de carga e incidentes
-│   ├── evidencia-generar-carga-nominal.jpeg           # Terminal: Generación de tráfico nominal
-│   ├── evidencia-grafana-carga-nominal.png            # Grafana: Tablero bajo operación nominal
-│   ├── evidencia-service-down-terminal.jpeg           # Terminal: Simulación caída de Mattermost
-│   ├── evidencia-service-down-grafana.jpeg            # Grafana: Impacto de caída del servicio
-│   ├── evidencia-service-down-prometheus.png          # Prometheus: Alerta ServiceDown y BurnRate FIRING
-│   ├── evidencia-database-down-terminal.jpeg          # Terminal: Simulación caída de PostgreSQL
-│   ├── evidencia-database-down-grafana.jpeg           # Grafana: Impacto de caída de base de datos
-│   ├── evidencia-database-down-prometheus.jpeg        # Prometheus: Alerta DatabaseDown FIRING
-│   ├── evidencia-cpu-stress-terminal.jpeg             # Terminal: Simulación estrés de CPU
-│   └── evidencia-cpu-stress-grafana.jpeg              # Grafana: Saturación de CPU en tiempo real
+│   └── config.yml                           # Probes de red (HTTP/TCP)
+├── imagenes/                                # Evidencia de evidencia
+│   ├── evidencia-generar-carga-nominal.jpeg
+│   ├── evidencia-grafana-carga-nominal.png
+│   ├── evidencia-service-down-terminal.jpeg
+│   ├── evidencia-service-down-grafana.jpeg
+│   ├── evidencia-service-down-prometheus.png
+│   ├── evidencia-database-down-terminal.jpeg
+│   ├── evidencia-database-down-grafana.jpeg
+│   ├── evidencia-database-down-prometheus.jpeg
+│   ├── evidencia-cpu-stress-terminal.jpeg
+│   └── evidencia-cpu-stress-grafana.jpeg
 ├── prometheus/
-│   ├── prometheus.yml                                 # Configuración global, timeouts y scrape jobs
+│   ├── prometheus.yml                       # Configuración y targets (Jobs)
 │   └── rules/
-│       ├── sli_slo_rules.yml                          # Recording rules: SLIs, Error Budget y Saturación
-│       └── burn_rate_alerts.yml                       # Alertas SRE Multi-Burn Rate y de infraestructura
+│       ├── sli_slo_rules.yml                # Políticas SLI y Error Budget
+│       └── burn_rate_alerts.yml             # Alertas SRE Multi-Burn Rate
 ├── grafana/
 │   ├── provisioning/
-│   │   ├── datasources/datasource.yml                 # IaC: Configuración automática del datasource Prometheus
-│   │   └── dashboards/dashboards.yml                  # IaC: Aprovisionamiento de dashboards JSON
+│   │   ├── datasources/datasource.yml       # IaC: Datasource Prometheus
+│   │   └── dashboards/dashboards.yml        # IaC: Auto-aprovisionamiento
 │   └── dashboards/
-│       └── mattermost-sre-golden-signals.json         # Dashboard oficial con 4 Golden Signals y SLOs
+│       └── mattermost-sre-golden-signals.json # Dashboard Golden Signals
 ├── runbooks/
-│   └── incident-response-runbook.md                   # Manual procedimental de respuesta a incidentes
+│   └── incident-response-runbook.md         # Playbook de incidentes (SEV)
 └── scripts/
-    ├── traffic_generator.sh                           # Generador de tráfico nominal concurrente
-    └── simulate_incident.sh                           # Inyector de fallas (service-down, db-down, high-load)
+    ├── traffic_generator.sh                 # Automatización de carga HTTP
+    └── simulate_incident.sh                 # Scripts de Chaos Engineering
 ```
