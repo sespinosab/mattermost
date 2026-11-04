@@ -78,7 +78,7 @@ services:
     container_name: mattermost-postgres-exporter
     restart: unless-stopped
     environment:
-      - DATA_SOURCE_NAME=postgresql://mmuser:mostest_password@mattermost-db:5432/mattermost?sslmode=disable
+      - DATA_SOURCE_NAME=postgres://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}?sslmode=require&connect_timeout=10
     ports:
       - "9187:9187"
     networks:
