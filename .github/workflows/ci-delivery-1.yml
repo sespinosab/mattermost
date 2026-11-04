@@ -294,3 +294,7 @@ jobs:
 
             sleep 10
           done
+  deploy:
+    name: 5. Deploy to AWS EC2
+    needs: publish
+    runs-on: ubuntu-latest

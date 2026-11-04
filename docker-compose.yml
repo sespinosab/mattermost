@@ -11,10 +11,14 @@ services:
     #    condition: service_healthy
     ports:
       - "8065:8065"
+      - "8067:8067"
     environment:
       # Database connection configuration
       - MM_SQLSETTINGS_DRIVERNAME=postgres
       - MM_SQLSETTINGS_DATASOURCE=postgres://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}?sslmode=require&connect_timeout=10
+      # Metrics and Observability (Prometheus)
+      - MM_METRICSSETTINGS_ENABLE=true
+      - MM_METRICSSETTINGS_LISTENADDRESS=:8067
       # Service operational settings
       - MM_SERVICESETTINGS_SITEURL=${MM_SITE_URL}
       - MM_SERVICESETTINGS_LISTENADDRESS=:8065

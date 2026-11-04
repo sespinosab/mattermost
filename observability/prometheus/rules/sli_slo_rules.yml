@@ -1,0 +1,78 @@
+groups:
+  - name: mattermost_sli_slo_rules
+    interval: 10s
+    rules:
+      # ==========================================================================
+      # SLI 1: DISPONIBILIDAD
+      # Fuente: blackbox_exporter (probe_success: 1 = UP, 0 = DOWN)
+      # ==========================================================================
+      - record: job:mattermost_probe_success:instant
+        expr: probe_success{job="blackbox_http_mattermost"}
+
+      # SLI Disponibilidad en ventana 5m
+      - record: job:mattermost_availability:sli5m
+        expr: |
+          avg_over_time(probe_success{job="blackbox_http_mattermost"}[5m])
+
+      # SLI Disponibilidad en ventana 30m
+      - record: job:mattermost_availability:sli30m
+        expr: |
+          avg_over_time(probe_success{job="blackbox_http_mattermost"}[30m])
+
+      # ==========================================================================
+      # SLI 2: LATENCIA (RENDIMIENTO)
+      # ==========================================================================
+      - record: job:mattermost_latency_avg:seconds5m
+        expr: |
+          avg_over_time(probe_duration_seconds{job="blackbox_http_mattermost"}[5m])
+
+      - record: job:mattermost_latency_p95:seconds5m
+        expr: |
+          histogram_quantile(0.95, rate(probe_duration_seconds_bucket{job="blackbox_http_api"}[5m]))
+          OR on() (job:mattermost_latency_avg:seconds5m * 1.25)
+
+      # ==========================================================================
+      # SLI 3: TASA DE ERROR Y ERROR BUDGET
+      # ==========================================================================
+      # Tasa de error en 5 minutos (de 0.0 a 1.0)
+      - record: job:mattermost_error_rate:ratio5m
+        expr: |
+          clamp_min(1 - job:mattermost_availability:sli5m, 0)
+
+      # Saldo restante de Error Budget en Tiempo Real:
+      # SLO Objetivo = 99.9% (Margen tolerable de error = 0.1% = 0.001)
+      # Si availability es 1.0 (100%) -> Saldo = 100%
+      # Si availability cae a 0.999 (99.9%) -> Saldo = 0% (Presupuesto agotado)
+      # Durante una caída (availability < 0.999) -> Saldo = 0% (Zona Crítica)
+      # Se calcula sobre sli5m para reflejar el impacto visual inmediato del incidente.
+      - record: job:mattermost_error_budget_remaining:percent
+        expr: |
+          clamp_max(
+            clamp_min(
+              ( (job:mattermost_availability:sli5m - 0.999) / (1 - 0.999) ) * 100,
+              0
+            ),
+            100
+          )
+          OR on() (probe_success{job="blackbox_http_mattermost"} * 100)
+
+      # ==========================================================================
+      # MÉTRICAS DE HOST Y CONTENEDORES
+      # ==========================================================================
+      - record: node:cpu_utilization:percent5m
+        expr: |
+          100 - (avg by (instance) (
+            rate(node_cpu_seconds_total{mode="idle"}[2m])
+          ) * 100)
+
+      - record: node:memory_utilization:percent
+        expr: |
+          (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100
+
+      - record: container:cpu_utilization:percent5m
+        expr: |
+          sum by (name) (rate(container_cpu_usage_seconds_total[1m])) * 100
+
+      - record: container:memory_usage:mb
+        expr: |
+          container_memory_usage_bytes / 1024 / 1024

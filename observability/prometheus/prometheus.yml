@@ -1,0 +1,76 @@
+global:
+  scrape_interval: 10s
+  evaluation_interval: 10s
+  scrape_timeout: 5s
+
+rule_files:
+  - "rules/*.yml"
+
+scrape_configs:
+  # ─── Blackbox Exporter: disponibilidad y latencia HTTP de Mattermost ────────
+  - job_name: "blackbox_http_mattermost"
+    metrics_path: /probe
+    params:
+      module: [http_mattermost_ping]
+    static_configs:
+      - targets:
+          - http://mattermost-app:8065/api/v4/system/ping
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: mattermost-blackbox:9115
+      - target_label: service
+        replacement: mattermost
+      - target_label: env
+        replacement: production
+
+  # ─── Blackbox Exporter: sondeo de endpoints web para métricas de tráfico/latencia
+  - job_name: "blackbox_http_api"
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+          - http://mattermost-app:8065/
+          - http://mattermost-app:8065/api/v4/system/ping
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: mattermost-blackbox:9115
+      - target_label: env
+        replacement: production
+
+  # ─── Node Exporter: métricas de CPU y Memoria del host ──────────────────────
+  - job_name: "node"
+    static_configs:
+      - targets: ["mattermost-node-exporter:9100"]
+        labels:
+          service: "host"
+          env: "production"
+
+  # ─── cAdvisor: métricas de contenedores Docker ──────────────────────────────
+  - job_name: "cadvisor"
+    static_configs:
+      - targets: ["mattermost-cadvisor:8080"]
+        labels:
+          service: "containers"
+          env: "production"
+
+  # ─── PostgreSQL Exporter ─────────────────────────────────────────────────────
+  - job_name: "postgres"
+    static_configs:
+      - targets: ["mattermost-postgres-exporter:9187"]
+        labels:
+          service: "postgres"
+          env: "production"
+
+  # ─── Prometheus self-monitoring ──────────────────────────────────────────────
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
