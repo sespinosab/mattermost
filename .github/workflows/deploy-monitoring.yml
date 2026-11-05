@@ -35,7 +35,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: arn:aws:iam::506305355048:role/MattermostGitHubDeploy
           aws-region: us-east-1
@@ -44,6 +44,8 @@ jobs:
         env:
           INSTANCE_ID: i-0931fe9de23859d52
         run: |
+          set -euo pipefail
+
           COMMAND_ID=$(aws ssm send-command \
             --targets "Key=tag:Name,Values=mattermost-server" \
             --document-name "AWS-RunShellScript" \
@@ -55,7 +57,7 @@ jobs:
             --comment "Deploy Mattermost monitoring stack" \
             --query "Command.CommandId" \
             --output text)
-            
+
             echo "SSM Command ID: $COMMAND_ID"
 
             echo "Waiting for SSM command to start..."
