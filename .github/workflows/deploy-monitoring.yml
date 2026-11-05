@@ -121,10 +121,11 @@ jobs:
             echo "Timed out waiting for the SSM command."
 
             echo "Final command invocation list:"
-            aws ssm list-command-invocations 
-            --command-id "$COMMAND_ID" 
-            --details 
-            --region us-east-1 
-            --output json || true
+
+            aws ssm list-command-invocations \
+              --command-id "$COMMAND_ID" \
+              --details \
+              --region us-east-1 \
+              --output json || true
 
             exit 1
