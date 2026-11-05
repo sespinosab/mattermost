@@ -52,7 +52,7 @@ jobs:
           --output json
 
           COMMAND_ID=$(aws ssm send-command \
-            --targets "Key=tag:Name,Values=mattermost-server" \
+            --instance-id "$INSTANCE_ID"
             --document-name "AWS-RunShellScript" \
             --parameters 'commands=[
               "cd /opt/mattermost",
