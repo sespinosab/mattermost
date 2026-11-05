@@ -46,6 +46,11 @@ jobs:
         run: |
           set -euo pipefail
 
+          aws ssm describe-instance-information \
+          --region us-east-1 \
+          --filters "Key=InstanceIds,Values=$INSTANCE_ID" \
+          --output json
+
           COMMAND_ID=$(aws ssm send-command \
             --targets "Key=tag:Name,Values=mattermost-server" \
             --document-name "AWS-RunShellScript" \
