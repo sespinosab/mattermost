@@ -65,6 +65,13 @@ jobs:
 
             echo "SSM Command ID: $COMMAND_ID"
 
+            echo "Checking SSM command details..."
+
+            aws ssm list-commands \
+              --command-id "$COMMAND_ID" \
+              --region us-east-1 \
+              --output json
+
             echo "Waiting for SSM command to start..."
 
             STATUS=""
