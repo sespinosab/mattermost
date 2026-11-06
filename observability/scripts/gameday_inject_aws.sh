@@ -161,7 +161,7 @@ EOF
     DELAY_MS="${4:-400}"
     DURATION_S="${5:-240}"
 
-    echo -e "${RED}[ATAQUE] Inyectando ${DELAY_MS}ms de latencia en el host EC2 por ${DURATION_S}s...${NC}"
+    echo -e "${RED}[ATAQUE] Inyectando ${DELAY_MS}ms de latencia en el contenedor ${CONTAINER_NAME} por ${DURATION_S}s...${NC}"
     echo -e "${YELLOW}El servicio NO se cae: se degrada (probe_success sigue en 1).${NC}"
 
     # netem se aplica DENTRO del namespace de red del contenedor `mattermost`
