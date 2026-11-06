@@ -45,9 +45,11 @@ groups:
 
       # ─── 3. LATENCIA: SLO Rendimiento violado (P95 > 250ms) ──────────────
       - alert: MattermostLatencySLODegraded
+        # Ventana 1m + for 30s: detección en ~1 min tras iniciar la degradación
+        # (antes: ventana 5m + for 3m ≈ 5-6 min, incompatible con un GameDay de 10 min).
         expr: |
-          job:mattermost_latency_avg:seconds5m > 0.250
-        for: 3m
+          job:mattermost_latency_avg:seconds1m > 0.250
+        for: 30s
         labels:
           severity: warning
           tier: sre-alerts
@@ -55,7 +57,7 @@ groups:
           summary: "🟡 Violación de SLO de Latencia (Promedio > 250ms)"
           description: |
             La latencia promedio de respuesta HTTP es de {{ $value | humanizeDuration }},
-            superando el objetivo de 250ms durante 3+ minutos.
+            superando el objetivo de 250ms (ventana de 1 min, sostenido 30s+).
           runbook_url: "https://github.com/sespinosab/mattermost/blob/master/observability/runbooks/incident-response-runbook.md"
 
       # ─── 4. SERVICIO CAÍDO: Mattermost no responde ────────────────────────

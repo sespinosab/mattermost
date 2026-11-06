@@ -26,6 +26,13 @@ groups:
         expr: |
           avg_over_time(probe_duration_seconds{job="blackbox_http_mattermost"}[5m])
 
+      # Ventana corta (1m) para detección rápida de degradación de latencia.
+      # La ventana de 5m reacciona lento (tarda ~2.5 min en cruzar el umbral);
+      # esta regla se usa SOLO para alertar, el dashboard sigue con la de 5m.
+      - record: job:mattermost_latency_avg:seconds1m
+        expr: |
+          avg_over_time(probe_duration_seconds{job="blackbox_http_mattermost"}[1m])
+
       - record: job:mattermost_latency_p95:seconds5m
         expr: |
           histogram_quantile(0.95, rate(probe_duration_seconds_bucket{job="blackbox_http_api"}[5m]))

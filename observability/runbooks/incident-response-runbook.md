@@ -105,7 +105,7 @@ Ante cualquier alerta disparada en Prometheus o notificación de incidente:
 ---
 
 ### 3.3 Incidente C: `MattermostLatencySLODegraded`
-**Condición:** Latencia promedio o percentil $P_{95} > 250\text{ ms}$ durante más de 3 minutos consecutivos.
+**Condición:** Latencia promedio (ventana de 1 min) $> 250\text{ ms}$ sostenida por más de 30 segundos.
 
 #### Diagnóstico:
 1. Identificar si existe saturación de recursos en los contenedores:
@@ -179,7 +179,9 @@ Tras ejecutar cualquier acción de remediación:
 
 ## 5. Simulación de Pruebas del Runbook
 
-Para entrenar y validar los procedimientos de este Runbook de forma controlada:
+### 5.1 Entorno local (contenedores Docker)
+
+Para entrenar y validar los procedimientos de este Runbook de forma controlada en local:
 
 ```bash
 # Simulación 1: Caída de la aplicación (Procedimiento 3.1)
@@ -191,3 +193,30 @@ Para entrenar y validar los procedimientos de este Runbook de forma controlada:
 # Simulación 3: Sobrecarga extrema de CPU (Procedimiento 3.4)
 ./observability/scripts/simulate_incident.sh high-load 60
 ```
+
+### 5.2 Entorno AWS (GameDay sobre EC2 vía SSM)
+
+En producción, Mattermost corre como contenedor `mattermost-app` en la EC2 primaria
+(desplegado por CI/CD con `docker-compose`, `restart: unless-stopped`), junto al stack de
+observabilidad en la misma instancia. La base de datos es **RDS gestionado** y la
+inyección se envía por **SSM Run Command** (sin SSH).
+Los dos escenarios del GameDay se recuperan **por el propio software**, sin
+intervención manual.
+
+```bash
+# Escenario A — Caída del servicio (self-healing por restart policy de Docker)
+./observability/scripts/gameday_inject_aws.sh service-down <INSTANCE_ID> <REGION>
+
+# Escenario F — Degradación de latencia (netem, auto-expiración programada)
+./observability/scripts/gameday_inject_aws.sh latency <INSTANCE_ID> <REGION> 400 240
+```
+
+| Escenario | Ataque | Señal dorada | Alerta | Recuperación (por software) |
+|---|---|---|---|---|
+| **A** | `docker kill mattermost-app` vía SSM | Disponibilidad / Errores | `MattermostServiceDown` (~1 min) | `--restart unless-stopped` revive el contenedor (~30s). No se reinicia a mano. |
+| **F** | `tc netem delay` en la interfaz del contenedor `mattermost-app` (vía `nsenter`, por SSM) | Latencia (> 250 ms) | `MattermostLatencySLODegraded` (~1 min: ventana 1m + for 30s) | La regla `netem` se auto-elimina por timer; Mattermost no se reinicia y la latencia vuelve sola. |
+
+> **Nota de topología (verificada en vivo):** el stack de observabilidad corre en la misma
+> EC2 primaria, en la red `mattermost_mattermost_network`, y sondea `mattermost-app:8065`.
+> Todos los targets de Prometheus están `UP`. Antes del ensayo, la EC2 necesita `tc`
+> (`dnf install -y iproute-tc`); el script intenta instalarlo si falta.

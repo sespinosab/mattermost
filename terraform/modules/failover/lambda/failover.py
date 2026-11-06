@@ -23,7 +23,7 @@ def app_is_healthy(instance_id):
             InstanceIds=[instance_id],
             DocumentName="AWS-RunShellScript",
             Parameters={"commands": ["for i in 1 2 3; do curl --fail --silent --show-error --max-time 5 http://127.0.0.1:8065/api/v4/system/ping >/dev/null && exit 0; sleep 5; done; exit 1"]},
-            TimeoutSeconds=15,
+            TimeoutSeconds=30,  # SSM exige un mínimo de 30; con 15 la validación fallaba y el chequeo siempre daba "no saludable"
         )
         command_id = command["Command"]["CommandId"]
         for _ in range(8):
