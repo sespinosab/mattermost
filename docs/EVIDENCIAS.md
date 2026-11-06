@@ -70,6 +70,14 @@ Para cada escenario, capturar los tres momentos: **antes** (verde), **durante** 
 ### 2.3 Recuperación del Error Budget (opcional pero contundente)
 Tras el Escenario A, el SLI de 5 min y el saldo de Error Budget vuelven progresivamente a 100 % en ≈ 5 min. Una captura de esa recuperación en Grafana ilustra la ventana de la métrica.
 
+### 2.4 Registro automático de la línea de tiempo
+`observability/scripts/gameday_watch.sh` deja un archivo con la línea de tiempo (probe, latencia, HTTP, SLI, Error Budget y alertas cada 5 s) en `evidencias/`, útil como evidencia textual junto a las capturas:
+```bash
+./observability/scripts/gameday_watch.sh preflight                 # revisión previa
+./observability/scripts/gameday_watch.sh watch 300 escenario-F     # registra 5 min en evidencias/
+./observability/scripts/gameday_watch.sh loki 2026-11-06T20:24:40Z 2026-11-06T20:27:10Z   # logs de Loki
+```
+
 ---
 
 ## 3. Arquitectura
