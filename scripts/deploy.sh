@@ -8,12 +8,21 @@ echo "Starting Mattermost deployment..."
 # Move to application directory
 cd /opt/mattermost
 
-# Load pre-existing .env if available (allows manual execution)
+# Load pre-existing .env ONLY as defaults (allows manual execution).
+# Variables already present in the environment (e.g. MATTERMOST_IMAGE exported by
+# the CI/CD deploy job) take precedence. Sourcing .env unconditionally overwrote the
+# new image tag with the one stored in the previous .env, so deployments reported
+# success while the container stayed on the old image.
 if [ -f .env ]; then
-  set -a
-  # shellcheck disable=SC1091
-  source .env
-  set +a
+  while IFS='=' read -r key value || [ -n "$key" ]; do
+    case "$key" in
+      ''|\#*) continue ;;
+    esac
+    [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
+    if [ -z "${!key:-}" ]; then
+      export "$key=$value"
+    fi
+  done < .env
 fi
 
 # Validate required environment variables
