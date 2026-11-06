@@ -9,15 +9,17 @@
 #   - La inyección se envía a la EC2 vía AWS SSM Run Command (sin abrir SSH).
 #
 # Escenarios:
-#   A) service-down  → Mata el contenedor Mattermost (docker kill).
+#   A) service-down  → Simula un crash: kill -9 al proceso principal del contenedor
+#                      desde el host (NO `docker kill`, que Docker trata como parada
+#                      manual y no reinicia).
 #                      RECUPERACIÓN: automática por la restart policy de Docker.
 #                      No se reinicia nada a mano.
-#   F) latency       → Inyecta latencia de red con tc/netem en el host EC2.
+#   F) latency       → Inyecta latencia de red con tc/netem dentro del contenedor.
 #                      El servicio NO se cae, se degrada (P95 > 250ms).
 #                      RECUPERACIÓN: auto-expiración programada (tc qdisc del).
 #
 # Uso:
-#   ./gameday_inject_aws.sh service-down <INSTANCE_ID> [REGION]
+#   ./gameday_inject_aws.sh service-down <INSTANCE_ID> [REGION] [CRASHES]
 #   ./gameday_inject_aws.sh latency      <INSTANCE_ID> [REGION] [DELAY_MS] [DURATION_S]
 #
 # Requisitos locales:
@@ -56,14 +58,20 @@ run_on_ec2() {
 
   echo -e "${YELLOW}→ Enviando a ${INSTANCE_ID} vía SSM: ${description}${NC}"
 
-  local cmd_id
+  # Los parámetros se pasan desde un archivo JSON: la sintaxis abreviada
+  # `commands=[...]` del CLI NO interpreta los saltos de línea (\n) y rompía los
+  # comandos de varias líneas en la EC2 (verificado en el ensayo).
+  local params_file cmd_id
+  params_file="$(mktemp)"
+  printf '{"commands": %s}' "$commands_json" > "$params_file"
   cmd_id=$(aws ssm send-command \
     --region "$REGION" \
     --instance-ids "$INSTANCE_ID" \
     --document-name "AWS-RunShellScript" \
     --comment "GameDay: ${description}" \
-    --parameters "commands=${commands_json}" \
+    --parameters "file://${params_file}" \
     --query "Command.CommandId" --output text)
+  rm -f "$params_file"
 
   echo "  CommandId: ${cmd_id}"
   aws ssm wait command-executed \
@@ -93,15 +101,51 @@ case "$SCENARIO" in
   # ESCENARIO A — CAÍDA DEL SERVICIO (self-healing por restart policy)
   # ============================================================================
   service-down)
-    echo -e "${RED}[ATAQUE] Matando el contenedor '${CONTAINER_NAME}' en la EC2...${NC}"
-    run_on_ec2 "kill mattermost container" \
-      "[\"docker kill ${CONTAINER_NAME} || true\",\"echo '--- estado tras el kill ---'\",\"docker ps -a --filter name=${CONTAINER_NAME} --format '{{.Names}}: {{.Status}}'\"]"
+    CRASHES="${4:-10}"
+
+    echo -e "${RED}[ATAQUE] Crash-loop de '${CONTAINER_NAME}': ${CRASHES} crashes consecutivos (kill -9 desde el host)...${NC}"
+    # IMPORTANTE: NO usar `docker kill` ni `docker stop`. Ambos pasan por la API de
+    # Docker, que los trata como parada MANUAL e ignora la restart policy
+    # (verificado en el ensayo: el contenedor quedó en Exited (137) sin reiniciarse).
+    # Un `kill -9` al PID del contenedor desde el host simula un crash real del
+    # proceso: Docker lo ve como salida inesperada y aplica `unless-stopped`.
+    #
+    # Un solo crash se recupera en ~7s (demasiado corto para que la alerta dispare).
+    # Por eso se repite: si el contenedor muere antes de 10s de vida, Docker DUPLICA
+    # el tiempo de espera entre reinicios (100ms, 200ms, 400ms ... backoff exponencial),
+    # lo que produce un crash-loop realista cuya caída crece a ~2 min con 10 crashes.
+    # Al terminar el bucle nadie interviene: Docker levanta el contenedor y, al vivir
+    # más de 10s, el backoff se reinicia. El bucle corre EN la EC2 (nohup), así que la
+    # inyección es autónoma y no depende de esta sesión.
+    read -r -d '' CRASH_CMD <<EOF || true
+cat > /tmp/gameday_crashloop.sh <<'INNER'
+#!/bin/bash
+for i in \$(seq 1 ${CRASHES}); do
+  PID=0
+  for t in \$(seq 1 90); do
+    PID=\$(docker inspect -f '{{.State.Pid}}' ${CONTAINER_NAME} 2>/dev/null || echo 0)
+    [ "\$PID" != "0" ] && [ -n "\$PID" ] && break
+    sleep 1
+  done
+  [ "\$PID" != "0" ] && kill -9 "\$PID" 2>/dev/null
+  logger "GameDay: crash \$i/${CRASHES} de ${CONTAINER_NAME}"
+  sleep 1
+done
+logger "GameDay: crash-loop terminado; Docker debe recuperar el contenedor solo"
+INNER
+chmod +x /tmp/gameday_crashloop.sh
+nohup /tmp/gameday_crashloop.sh >/tmp/gameday_crashloop.log 2>&1 &
+echo "Crash-loop lanzado en background (PID \$!), ${CRASHES} crashes."
+EOF
+    ESCAPED=$(printf '%s' "$CRASH_CMD" | python3 -c 'import json,sys; print(json.dumps([sys.stdin.read()]))')
+    run_on_ec2 "crash-loop mattermost (${CRASHES} kill -9)" "$ESCAPED"
 
     echo ""
     echo -e "${YELLOW}OBSERVAR EN VIVO (no se interviene manualmente):${NC}"
     echo "  → Grafana:    panel 'Estado del Servicio' pasa a DOWN; SLI y Error Budget caen"
-    echo "  → Prometheus: MattermostServiceDown → PENDING → FIRING (~1 min)"
-    echo "  → RECUPERACIÓN: 'restart: unless-stopped' revive el contenedor solo (~30s)"
+    echo "  → Prometheus: MattermostServiceDown → PENDING → FIRING (~1 min de caída sostenida)"
+    echo "  → RECUPERACIÓN: al terminar el crash-loop, 'restart: unless-stopped' deja el"
+    echo "    contenedor arriba solo; no se ejecuta ningún comando de recuperación."
     echo ""
     echo -e "${GREEN}Inyección aplicada. La plataforma se recupera sola; NO reiniciar a mano.${NC}"
     echo -e "Para verificar la auto-recuperación:"
@@ -117,7 +161,7 @@ case "$SCENARIO" in
     DELAY_MS="${4:-400}"
     DURATION_S="${5:-240}"
 
-    echo -e "${RED}[ATAQUE] Inyectando ${DELAY_MS}ms de latencia en el host EC2 por ${DURATION_S}s...${NC}"
+    echo -e "${RED}[ATAQUE] Inyectando ${DELAY_MS}ms de latencia en el contenedor ${CONTAINER_NAME} por ${DURATION_S}s...${NC}"
     echo -e "${YELLOW}El servicio NO se cae: se degrada (probe_success sigue en 1).${NC}"
 
     # netem se aplica DENTRO del namespace de red del contenedor `mattermost`

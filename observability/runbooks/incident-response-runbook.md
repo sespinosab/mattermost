@@ -205,7 +205,7 @@ intervención manual.
 
 ```bash
 # Escenario A — Caída del servicio (self-healing por restart policy de Docker)
-./observability/scripts/gameday_inject_aws.sh service-down <INSTANCE_ID> <REGION>
+./observability/scripts/gameday_inject_aws.sh service-down <INSTANCE_ID> <REGION> 10
 
 # Escenario F — Degradación de latencia (netem, auto-expiración programada)
 ./observability/scripts/gameday_inject_aws.sh latency <INSTANCE_ID> <REGION> 400 240
@@ -213,8 +213,8 @@ intervención manual.
 
 | Escenario | Ataque | Señal dorada | Alerta | Recuperación (por software) |
 |---|---|---|---|---|
-| **A** | `docker kill mattermost-app` vía SSM | Disponibilidad / Errores | `MattermostServiceDown` (~1 min) | `--restart unless-stopped` revive el contenedor (~30s). No se reinicia a mano. |
-| **F** | `tc netem delay` en la interfaz del contenedor `mattermost-app` (vía `nsenter`, por SSM) | Latencia (> 250 ms) | `MattermostLatencySLODegraded` (~1 min: ventana 1m + for 30s) | La regla `netem` se auto-elimina por timer; Mattermost no se reinicia y la latencia vuelve sola. |
+| **A** | Crash-loop: 10 × `kill -9` al proceso principal de `mattermost-app` (desde el host, vía SSM). **No** usar `docker kill`/`docker stop`: Docker los trata como parada manual e ignora la restart policy. | Disponibilidad / Errores | `MattermostServiceDown` (~1 min de caída sostenida; en el ensayo disparó a ~75 s) | Al terminar el bucle, `--restart unless-stopped` deja el contenedor arriba solo (caída total ≈ 1 min 50 s en el ensayo). No se reinicia a mano. |
+| **F** | `tc netem delay` en la interfaz del contenedor `mattermost-app` (vía `nsenter`, por SSM) | Latencia (> 250 ms) | `MattermostLatencySLODegraded` (ensayo con 400 ms: `pending` a ~40 s, `firing` a ~70 s; latencia 1,7 ms → ~800 ms) | La regla `netem` se auto-elimina por timer (ensayo: a los 180 s); Mattermost no se reinicia y la alerta se resuelve ~60 s después. |
 
 > **Nota de topología (verificada en vivo):** el stack de observabilidad corre en la misma
 > EC2 primaria, en la red `mattermost_mattermost_network`, y sondea `mattermost-app:8065`.
