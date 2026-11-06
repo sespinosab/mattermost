@@ -104,6 +104,33 @@ Ante cualquier alerta disparada en Prometheus o notificación de incidente:
 
 ---
 
+### 3.2-AWS Incidente B en producción: `MattermostDatabaseDown` con RDS
+**Aplica en AWS:** la base de datos es la instancia gestionada `mattermost-postgres` (RDS PostgreSQL 16, Single-AZ). Los comandos `docker exec mattermost-db …` de la sección 3.2 solo valen para el entorno local.
+
+#### Diagnóstico:
+1. Estado de la instancia y eventos recientes:
+   ```bash
+   aws rds describe-db-instances --db-instance-identifier mattermost-postgres \
+     --query 'DBInstances[0].{Estado:DBInstanceStatus,AZ:AvailabilityZone,Endpoint:Endpoint.Address}' --output table
+   aws rds describe-events --source-type db-instance --source-identifier mattermost-postgres --duration 120
+   ```
+2. Conectividad desde la EC2 (por SSM): `pg_isready -h <endpoint> -p 5432` y revisión del *security group* de la BD (solo debe permitir 5432 desde la aplicación).
+3. Confirmar el síntoma en la aplicación: `docker logs --tail 100 mattermost-app | grep -iE "database|connection|pq:"`.
+
+#### Mitigación:
+- **Fallo transitorio:** `aws rds reboot-db-instance --db-instance-identifier mattermost-postgres`. Mattermost reconecta solo; **no** reiniciar la aplicación.
+- **Instancia perdida o corrupta:** restaurar a un punto en el tiempo hacia una instancia nueva:
+  ```bash
+  aws rds restore-db-instance-to-point-in-time \
+    --source-db-instance-identifier mattermost-postgres \
+    --target-db-instance-identifier mattermost-postgres-restored \
+    --use-latest-restorable-time
+  ```
+  Aplicar el mismo grupo de subredes y *security group*, actualizar `DB_HOST` en las variables del *environment* de GitHub y redeplegar.
+- **Límites de la configuración actual:** Single-AZ, retención de backups de 1 día y sin protección contra borrado. Una caída prolongada consume el presupuesto de error a 1 000× (ver `docs/PRE-MORTEM.md`).
+
+---
+
 ### 3.3 Incidente C: `MattermostLatencySLODegraded`
 **Condición:** Latencia promedio (ventana de 1 min) $> 250\text{ ms}$ sostenida por más de 30 segundos.
 
