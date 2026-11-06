@@ -70,6 +70,14 @@ scrape_configs:
           service: "postgres"
           env: "production"
 
+  # ─── OpenTelemetry Collector: métricas recolectadas vía OTLP ────────────────
+  - job_name: "otel-collector"
+    static_configs:
+      - targets: ["mattermost-otel-collector:8889"]
+        labels:
+          service: "otel-collector"
+          env: "production"
+
   # ─── Prometheus self-monitoring ──────────────────────────────────────────────
   - job_name: "prometheus"
     static_configs:

@@ -11,3 +11,37 @@ datasources:
     jsonData:
       timeInterval: 5s
 
+  - name: Tempo
+    type: tempo
+    access: proxy
+    uid: tempo
+    url: http://tempo:3200
+    editable: true
+    jsonData:
+      httpMethod: GET
+      search:
+        hide: false
+      nodeGraph:
+        enabled: true
+
+  - name: Loki
+    type: loki
+    access: proxy
+    uid: loki
+    url: http://loki:3100
+    editable: true
+    jsonData:
+      maxLines: 1000
+      derivedFields:
+        # 1. Enlaza trace_id de 32 caracteres (con o sin espacios/comillas en JSON o texto)
+        - name: TraceID
+          datasourceUid: tempo
+          matcherRegex: "trace_id[\"\\s:=]+([a-fA-F0-9]{32})"
+          url: "$${__value.raw}"
+          urlDisplayLabel: "Ver Traza en Tempo"
+        # 2. Enlaza traceID corto de 16 caracteres
+        - name: TraceID_Short
+          datasourceUid: tempo
+          matcherRegex: "traceID[\"\\s:=]+([a-fA-F0-9]{16})"
+          url: "0000000000000000$${__value.raw}"
+          urlDisplayLabel: "Ver Traza en Tempo"

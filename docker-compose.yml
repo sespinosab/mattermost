@@ -25,6 +25,18 @@ services:
       # File storage configuration
       - MM_FILESETTINGS_DRIVERNAME=local
       - MM_FILESETTINGS_DIRECTORY=/mattermost/data
+      # OpenTelemetry & Tracing (OTel Exporter & Context Propagation)
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://mattermost-otel-collector:4318
+      - OTEL_EXPORTER_OTLP_INSECURE=true
+      - OTEL_SERVICE_NAME=mattermost-app
+      - OTEL_TRACES_EXPORTER=otlp
+      - OTEL_METRICS_EXPORTER=none
+      - OTEL_LOGS_EXPORTER=otlp
+      - OTEL_PROPAGATORS=tracecontext,baggage
+      # Logging estructurado JSON con Trace ID
+      - MM_LOGSETTINGS_ENABLECONSOLE=true
+      - MM_LOGSETTINGS_CONSOLEJSON=true
+      - MM_LOGSETTINGS_ENABLECOLOR=false
     volumes:
       - mattermost_config:/mattermost/config
       - mattermost_data:/mattermost/data

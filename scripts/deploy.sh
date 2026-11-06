@@ -5,6 +5,17 @@ set -euo pipefail
 
 echo "Starting Mattermost deployment..."
 
+# Move to application directory
+cd /opt/mattermost
+
+# Load pre-existing .env if available (allows manual execution)
+if [ -f .env ]; then
+  set -a
+  # shellcheck disable=SC1091
+  source .env
+  set +a
+fi
+
 # Validate required environment variables
 : "${DB_HOST:?DB_HOST is required}"
 : "${DB_PORT:?DB_PORT is required}"
@@ -13,9 +24,6 @@ echo "Starting Mattermost deployment..."
 : "${DB_PASSWORD:?DB_PASSWORD is required}"
 : "${MM_SITE_URL:?MM_SITE_URL is required}"
 : "${MATTERMOST_IMAGE:?MATTERMOST_IMAGE is required}"
-
-# Move to application directory
-cd /opt/mattermost
 
 # Restrict permissions on newly created files
 umask 077

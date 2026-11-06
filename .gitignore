@@ -158,6 +158,9 @@ report.xml
 go.*.orig
 config.override.mk
 docker-compose.override.yaml
+docker-compose.override.yml
+docker-compose.*.override.yml
+docker-compose.*.override.yaml
 
 ## Notice Folders
 .notice/
