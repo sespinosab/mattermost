@@ -28,6 +28,30 @@ resource "aws_security_group" "application" {
     cidr_blocks = ["10.42.11.0/24", "10.42.12.0/24"]
   }
 
+  ingress {
+    description = "Mattermost application access."
+    from_port   = 8065
+    to_port     = 8065
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description = "Graphana service access."
+    from_port   = 3000
+    to_port     = 3000
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description = "Prometheus access."
+    from_port   = 9090
+    to_port     = 9090
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
   tags = { Name = "${var.name_prefix}-application-sg" }
 }
 
