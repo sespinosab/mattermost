@@ -69,14 +69,21 @@ sudo docker logs --tail 50 mattermost-app
 ```
 *Inyecta una regla persistente `tc netem delay 400ms` en la interfaz `eth0` del namespace de red de `mattermost-app`.*
 
-#### 2. Diagnóstico en Amazon Linux (EC2):
-```bash
-# 1. Medir tiempo de respuesta desde Blackbox Exporter
-curl -s "http://3.217.54.83:9115/probe?target=http://mattermost-app:8065/api/v4/system/ping&module=http_mattermost_ping" | grep probe_duration_seconds
+#### 2. Diagnóstico de Latencia:
+- **Desde tu máquina local (consultando la métrica en Prometheus):**
+  ```bash
+  curl -s "http://3.217.54.83:9090/api/v1/query?query=probe_duration_seconds%7Bjob%3D%22blackbox_http_mattermost%22%7D"
+  ```
+  *(Devuelve el valor actual, ej. `"0.0018"` en estado normal o `"0.402"` durante la prueba de latencia).*
 
-# 2. Inspeccionar la regla de red activa en el contenedor (Amazon Linux)
-sudo nsenter -t $(sudo docker inspect -f '{{.State.Pid}}' mattermost-app) -n tc qdisc show dev eth0
-```
+- **O directamente dentro de la instancia EC2 (Amazon Linux):**
+  ```bash
+  # 1. Medir tiempo de respuesta con la sonda Blackbox local
+  curl -s "http://localhost:9115/probe?target=http://mattermost-app:8065/api/v4/system/ping&module=http_mattermost_ping" | grep probe_duration_seconds
+
+  # 2. Inspeccionar la regla de red activa en el contenedor
+  sudo nsenter -t $(sudo docker inspect -f '{{.State.Pid}}' mattermost-app) -n tc qdisc show dev eth0
+  ```
 
 #### 3. Remediación Manual SRE (Paso a Paso para Solucionar el Incidente):
 - **Opción A — Dentro de la instancia EC2 (Amazon Linux):**
