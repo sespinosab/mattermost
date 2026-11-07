@@ -23,7 +23,7 @@ Haz **primero F y después A**: F no deja residuos, mientras que A mantiene aler
 
 | Requisito | Cómo comprobarlo |
 |---|---|
-| **Sistema:** macOS o Linux. En Windows usa WSL o Git Bash (no PowerShell). | — |
+| **Sistema:** macOS o Linux (scripts `.sh`) o **Windows con PowerShell** (scripts `.ps1`, ver nota abajo). | — |
 | **AWS CLI v2** | `aws --version` |
 | **Python 3, curl y bash** | `python3 --version` · `curl --version` |
 | **Git** y acceso de lectura al repositorio `sespinosab/mattermost` | `git --version` |
@@ -51,6 +51,9 @@ output = json
 ```
 
 También puedes ejecutar `aws configure` y responder las preguntas (región `us-east-1`, formato `json`).
+
+
+> **En Windows (PowerShell):** usa las versiones `.ps1` en la misma carpeta. Sustituye en todos los comandos `./observability/scripts/gameday_watch.sh` por `.\observability\scripts\gameday_watch.ps1` y `gameday_inject_aws.sh ... latency i-... us-east-1 400 180` por `gameday_inject_aws.ps1 -Scenario latency -DelayMs 400 -DurationS 180` (y `-Scenario service-down -Crashes 10` para el otro). Requisitos: AWS CLI v2 y PowerShell 5.1+ (ya incluido en Windows 10/11). Si al ejecutar aparece un error de directiva de ejecución, abre PowerShell y corre una vez: `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass`.
 
 ---
 
