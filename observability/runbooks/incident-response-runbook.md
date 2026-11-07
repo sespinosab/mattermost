@@ -1,9 +1,9 @@
 # Runbook Operativo de Respuesta a Incidentes SRE — Mattermost (AWS)
 
-**Servicio:** Plataforma Mattermost en Producción (AWS EC2 / Amazon Linux)  
-**Objetivo de Confiabilidad (SLO):** Disponibilidad $\ge 99.9\%$ | Latencia $P_{95} \le 250\text{ ms}$  
+**Servicio:** Plataforma Mattermost en Producción (AWS EC2 / Amazon Linux)
+**Objetivo de Confiabilidad (SLO):** Disponibilidad $\ge 99.9\%$ | Latencia $P_{95} \le 250\text{ ms}$
 
-### Enlaces de Observabilidad y Servicio
+### Enlaces de Observabilidad y Producción
 - **Mattermost App:** [http://3.217.54.83:8065/signup_user_complete](http://3.217.54.83:8065/signup_user_complete)
 - **Grafana Dashboard:** [http://3.217.54.83:3000/](http://3.217.54.83:3000/)
 - **Prometheus Alertas:** [http://3.217.54.83:9090/alerts?search=](http://3.217.54.83:9090/alerts?search=)
@@ -13,91 +13,93 @@
 ## 1. Triage Inicial Rápido (Primeros 2 Minutos)
 
 1. **Confirmar Impacto en Dashboards:**
-   - **Grafana:** Revisar paneles *"Estado del Servicio"*, *"Saldo Restante de Error Budget"* y *"Latencia P95 / Promedio"*.
-   - **Prometheus:** Validar si hay alertas en estado `PENDING` o `FIRING`.
+   - **Grafana ([http://3.217.54.83:3000/](http://3.217.54.83:3000/)):** Revisar paneles *"Estado del Servicio"*, *"Saldo Restante de Error Budget"* y *"Latencia P95 / Promedio"*.
+   - **Prometheus ([http://3.217.54.83:9090/alerts?search=](http://3.217.54.83:9090/alerts?search=)):** Validar si existen alertas en `PENDING` o `FIRING`.
 
-2. **Verificar Salud del Servicio:**
+2. **Verificar Salud Externa del Servicio:**
    ```bash
    curl -i -s -m 5 http://3.217.54.83:8065/signup_user_complete || echo "ALERTA: MATTERMOST NO RESPONDE"
    ```
 
-3. **Verificar Contenedor en la Instancia (Amazon Linux):**
+3. **Verificar Contenedores en la Instancia EC2 (Amazon Linux):**
    ```bash
-   docker ps --filter "name=mattermost-app" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+   sudo docker ps --filter "name=mattermost" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
    ```
+
+4. **Consultas Rápidas en Loki (Grafana > Explore):**
+   - **Logs con traza a Tempo:** `{container_name="mattermost-app"} |= "trace_id="`
+   - **Errores generales:** `{container_name="mattermost-app"} |~ "(?i)error|fatal|panic|failed"`
+   - **Login fallido (401):** `{container_name="mattermost-app"} |= "/api/v4/users/login" |= "401"`
+   - **Eventos 404:** `{container_name="mattermost-app"} |= "not found handler triggered"`
 
 ---
 
-## 2. Procedimientos de Incidentes y GameDay AWS
+## 2. Procedimientos de Incidentes y Pruebas GameDay (AWS SSM)
 
-### Escenario 1: `MattermostServiceDown` (Caída del Servicio)
-**Síntoma:** El servicio no responde HTTP (`probe_success == 0`). Alerta `MattermostServiceDown` en `FIRING`.
+### Escenario 1: `MattermostServiceDown` (Caída del Servicio y Auto-Recuperación)
+**Síntoma:** El servicio no responde HTTP (`probe_success == 0`), el SLI y el Error Budget caen, y la alerta `MattermostServiceDown` pasa a `FIRING` (~75s).
 
-#### Diagnóstico:
+#### 1. Inyección de la Falla (Desde terminal con AWS CLI vía SSM):
 ```bash
-docker inspect mattermost-app --format 'Estado: {{.State.Status}} | ExitCode: {{.State.ExitCode}}'
-docker logs --tail 50 mattermost-app
+./observability/scripts/gameday_inject_aws.sh service-down <INSTANCE_ID> us-east-1 10
+```
+*Ejecuta en la EC2 un bucle con 10 `kill -9` al PID principal de `mattermost-app` (provocando crash-loop con backoff exponencial en Docker).*
+
+#### 2. Diagnóstico en Amazon Linux (EC2):
+```bash
+sudo docker inspect mattermost-app --format 'Estado: {{.State.Status}} | Restarting: {{.State.Restarting}} | ExitCode: {{.State.ExitCode}}'
+sudo docker logs --tail 50 mattermost-app
 ```
 
-#### Inyección GameDay (AWS SSM):
-```bash
-./observability/scripts/gameday_inject_aws.sh service-down <INSTANCE_ID> [REGION] 10
-```
-*Simula un crash-loop de 10 caídas consecutivas con `kill -9` al PID principal.*
-
-#### Remediación y Recuperación:
-- **Comportamiento esperado (Self-healing):** Al terminar el ciclo, la política `--restart unless-stopped` estabiliza y levanta el contenedor automáticamente.
-- **Acción manual de contingencia (si no levanta):**
+#### 3. Recuperación / Remediación:
+- **Recuperación Automática (Self-Healing):** No requiere intervención manual. Al finalizar el crash-loop, la política `--restart unless-stopped` de Docker levanta y estabiliza el contenedor automáticamente.
+- **Contingencia Manual en Amazon Linux (solo si el contenedor quedara detenido):**
   ```bash
-  cd /opt/mattermost && docker-compose up -d
+  cd /opt/mattermost && sudo docker-compose up -d
   ```
 
 ---
 
-### Escenario 2: `MattermostLatencySLODegraded` (Degradación de Latencia)
-**Síntoma:** El servicio sigue activo (`probe_success == 1`), pero la latencia supera el SLO ($> 250\text{ ms}$, rondando $400\text{ ms}$).
+### Escenario 2: `MattermostLatencySLODegraded` (Degradación de Latencia y Remediación SRE)
+**Síntoma:** El servicio sigue arriba (`probe_success == 1`), pero la latencia sube a $> 400\text{ ms}$ violando el SLO ($\le 250\text{ ms}$). La alerta `MattermostLatencySLODegraded` entra en `FIRING`. **La falla es persistente hasta que el SRE intervenga.**
 
-#### Diagnóstico:
-1. Verificar tiempo de respuesta con Blackbox:
-   ```bash
-   curl -s "http://localhost:9115/probe?target=http://mattermost-app:8065/api/v4/system/ping&module=http_mattermost_ping" | grep probe_duration_seconds
-   ```
-2. Inspeccionar si hay reglas de retardo de red en el contenedor:
-   ```bash
-   PID=$(docker inspect -f '{{.State.Pid}}' mattermost-app)
-   sudo nsenter -t $PID -n tc qdisc show dev eth0
-   ```
-
-#### Inyección GameDay (AWS SSM):
+#### 1. Inyección de la Falla (Desde terminal con AWS CLI vía SSM):
 ```bash
-./observability/scripts/gameday_inject_aws.sh latency <INSTANCE_ID> [REGION] 400
+./observability/scripts/gameday_inject_aws.sh latency <INSTANCE_ID> us-east-1 400
 ```
-*Inyecta 400 ms de latencia artificial persistente en la interfaz `eth0` del contenedor.*
+*Inyecta una regla persistente `tc netem delay 400ms` en la interfaz `eth0` del namespace de red de `mattermost-app`.*
 
-#### Remediación SRE (Eliminación de la degradación):
-- **Vía script SRE (Remoto por SSM):**
+#### 2. Diagnóstico en Amazon Linux (EC2):
+```bash
+# 1. Medir tiempo de respuesta desde Blackbox Exporter
+curl -s "http://3.217.54.83:9115/probe?target=http://mattermost-app:8065/api/v4/system/ping&module=http_mattermost_ping" | grep probe_duration_seconds
+
+# 2. Inspeccionar la regla de red activa en el contenedor (Amazon Linux)
+sudo nsenter -t $(sudo docker inspect -f '{{.State.Pid}}' mattermost-app) -n tc qdisc show dev eth0
+```
+
+#### 3. Remediación Manual SRE (Paso a Paso para Solucionar el Incidente):
+- **Opción A — Dentro de la instancia EC2 (Amazon Linux):**
   ```bash
-  ./observability/scripts/gameday_inject_aws.sh latency-fix <INSTANCE_ID> [REGION]
+  sudo nsenter -t $(sudo docker inspect -f '{{.State.Pid}}' mattermost-app) -n tc qdisc del dev eth0 root
   ```
-- **Vía directa en la EC2 (Amazon Linux):**
+- **Opción B — Remota vía Script SSM:**
   ```bash
-  PID=$(docker inspect -f '{{.State.Pid}}' mattermost-app)
-  sudo nsenter -t $PID -n tc qdisc del dev eth0 root
+  ./observability/scripts/gameday_inject_aws.sh latency-fix <INSTANCE_ID> us-east-1
   ```
-*La latencia vuelve inmediatamente a < 20 ms y la alerta se resuelve.*
+- **Confirmar que la regla fue eliminada:**
+  ```bash
+  sudo nsenter -t $(sudo docker inspect -f '{{.State.Pid}}' mattermost-app) -n tc qdisc show dev eth0
+  ```
+  *(Debe mostrar `qdisc noqueue 0: root` y la latencia en Grafana caerá de inmediato a $< 20\text{ ms}$).*
 
 ---
 
-## 3. Verificación y Restablecimiento Post-Incidente
+## 3. Verificación y Restablecimiento Post-Incidente (Amazon Linux)
 
 1. **Validar Respuesta HTTP 200:**
    ```bash
-   curl -i http://3.217.54.83:8065/signup_user_complete
+   curl -i -s http://3.217.54.83:8065/signup_user_complete | head -n 5
    ```
-2. **Confirmar Alertas Inactivas:**
-   - Verificar en [http://3.217.54.83:9090/alerts?search=](http://3.217.54.83:9090/alerts?search=) que no existan alertas en `FIRING`.
-3. **Restablecer SLI y Error Budget al 100% (para la presentación):**
-   ```bash
-   ./scripts/reset_sli_budget.sh
-   ```
-   *(Limpia métricas históricas de fallo y deja el saldo y disponibilidad en 100% en Grafana en 10s).*
+2. **Confirmar Alertas Resueltas:**
+   - Verificar en [http://3.217.54.83:9090/alerts?search=](http://3.217.54.83:9090/alerts?search=) que todas las alertas estén en **INACTIVE (Verde)**.
