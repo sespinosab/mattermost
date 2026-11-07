@@ -33,16 +33,22 @@
     },
     {
       "id": 1,
-      "title": "SLI Disponibilidad (ventana 5m)",
+      "title": "SLI Disponibilidad (SLO: ≥99.9%)",
       "type": "stat",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "h": 5, "w": 6, "x": 0, "y": 1 },
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "job:mattermost_availability:sli5m * 100",
-          "legendFormat": "SLI Actual (%)",
+          "expr": "job:mattermost_availability:sli30d * 100",
+          "legendFormat": "SLI Acumulado 30d (%)",
           "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "job:mattermost_availability:sli5m * 100",
+          "legendFormat": "SLI Ventana 5m (%)",
+          "refId": "B"
         }
       ],
       "options": {
@@ -80,8 +86,7 @@
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "expr": "job:mattermost_error_budget_remaining:percent",
           "legendFormat": "Saldo Restante (%)",
-          "refId": "A",
-          "instant": true
+          "refId": "A"
         }
       ],
       "options": {
@@ -93,7 +98,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "percent",
-          "decimals": 1,
+          "decimals": 2,
           "min": 0,
           "max": 100,
           "thresholds": {
@@ -101,7 +106,8 @@
             "steps": [
               { "color": "red", "value": null },
               { "color": "orange", "value": 20 },
-              { "color": "green", "value": 50 }
+              { "color": "yellow", "value": 50 },
+              { "color": "green", "value": 80 }
             ]
           }
         }
@@ -278,6 +284,12 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 15 },
       "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "(100 - job:mattermost_error_budget_remaining:percent)",
+          "legendFormat": "Error Budget Consumido (%) [30d]",
+          "refId": "C"
+        },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "expr": "job:mattermost_error_rate:ratio5m * 100",
@@ -509,5 +521,5 @@
   "timezone": "browser",
   "title": "Mattermost SRE — Golden Signals & SLOs",
   "uid": "mattermost-sre-overview",
-  "version": 7
+  "version": 9
 }

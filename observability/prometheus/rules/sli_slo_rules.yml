@@ -19,6 +19,15 @@ groups:
         expr: |
           avg_over_time(probe_success{job="blackbox_http_mattermost"}[30m])
 
+      # SLI Disponibilidad proyectado sobre el presupuesto mensual (SLO = 99.9%, 43.2 min = 259.2 sondas de 10s):
+      # Mide los fallos reales de las últimas 24h contra el mes completo (259.200 sondas)
+      - record: job:mattermost_availability:sli30d
+        expr: |
+          1 - (
+            (count_over_time(probe_success{job="blackbox_http_mattermost"}[24h]) - sum_over_time(probe_success{job="blackbox_http_mattermost"}[24h]))
+            / 259200
+          )
+
       # ==========================================================================
       # SLI 2: LATENCIA (RENDIMIENTO)
       # ==========================================================================
@@ -46,22 +55,19 @@ groups:
         expr: |
           clamp_min(1 - job:mattermost_availability:sli5m, 0)
 
-      # Saldo restante de Error Budget en Tiempo Real:
-      # SLO Objetivo = 99.9% (Margen tolerable de error = 0.1% = 0.001)
-      # Si availability es 1.0 (100%) -> Saldo = 100%
-      # Si availability cae a 0.999 (99.9%) -> Saldo = 0% (Presupuesto agotado)
-      # Durante una caída (availability < 0.999) -> Saldo = 0% (Zona Crítica)
-      # Se calcula sobre sli5m para reflejar el impacto visual inmediato del incidente.
+      # Saldo restante de Error Budget en base al SLI y SLO (99.9%):
+      # Formula exacta del Informe: ((SLI_actual - SLO) / (1 - SLO)) * 100
+      # Donde (1 - SLI_actual) son los fallos acumulados en 24h sobre el total mensual (259200),
+      # equivalente a: (1 - (fallos_24h / 259.2)) * 100
       - record: job:mattermost_error_budget_remaining:percent
         expr: |
           clamp_max(
             clamp_min(
-              ( (job:mattermost_availability:sli5m - 0.999) / (1 - 0.999) ) * 100,
+              ((job:mattermost_availability:sli30d - 0.999) / (1 - 0.999)) * 100,
               0
             ),
             100
           )
-          OR on() (probe_success{job="blackbox_http_mattermost"} * 100)
 
       # ==========================================================================
       # MÉTRICAS DE HOST Y CONTENEDORES

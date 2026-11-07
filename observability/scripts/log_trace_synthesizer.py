@@ -19,6 +19,8 @@ CONTAINERS_DIR = "/var/lib/docker/containers"
 LOKI_TRACE_RE = re.compile(r'traceID=([a-fA-F0-9]{16})')
 # 2. Captura el request_id de Mattermost (con o sin escapes de Docker json-file)
 MM_REQ_RE = re.compile(r'request_id\\?":\\?"([a-z0-9]{26})')
+# 3. Captura respuestas de error/404 sin request_id
+NOT_FOUND_RE = re.compile(r'path\\?":\\?"([^"]+)\\?".*code\\?":\s*(404|500)')
 
 seen_ids = set()
 
@@ -118,6 +120,26 @@ def process_line(line):
             ]
             send_trace_to_tempo(trace_32, span_16, f"{method} {url_path} ({status})", "mattermost-app", attrs, is_err)
             send_enriched_log_to_loki(inner, trace_32)
+
+    m_nf = NOT_FOUND_RE.search(line)
+    if m_nf:
+        nf_path = m_nf.group(1)
+        nf_code = m_nf.group(2)
+        unique_key = f"{nf_path}-{time.time()}"
+        trace_32 = hashlib.md5(unique_key.encode()).hexdigest()
+        span_16 = trace_32[:16]
+        try:
+            outer = json.loads(line)
+            inner = json.loads(outer.get("log", "{}"))
+        except Exception:
+            inner = {"path": nf_path, "code": int(nf_code), "msg": "not found handler triggered"}
+        attrs = [
+            {"key": "http.method", "value": {"stringValue": "GET"}},
+            {"key": "http.url", "value": {"stringValue": nf_path}},
+            {"key": "http.status_code", "value": {"stringValue": nf_code}}
+        ]
+        send_trace_to_tempo(trace_32, span_16, f"GET {nf_path} ({nf_code})", "mattermost-app", attrs, True)
+        send_enriched_log_to_loki(inner, trace_32)
 
     if len(seen_ids) > 5000:
         seen_ids.clear()
