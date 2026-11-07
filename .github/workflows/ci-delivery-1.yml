@@ -107,7 +107,9 @@ jobs:
     name: 4. Publish Container Artifact
     needs: [build, scan]
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main')
+    if: |
+      (github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main')) ||
+      (github.event_name == 'pull_request' && github.base_ref == 'master')
     steps:
       - name: Checkout Source Code
         uses: actions/checkout@v4
@@ -151,7 +153,9 @@ jobs:
     needs: publish
     runs-on: ubuntu-latest
 
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main')
+    if: |
+      (github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main')) ||
+      (github.event_name == 'pull_request' && github.base_ref == 'master')
 
     environment: mattermost-ec2-production
 
