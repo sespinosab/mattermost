@@ -64,12 +64,13 @@ run_on_ec2() {
   local params_file cmd_id
   params_file="$(mktemp)"
   printf '{"commands": %s}' "$commands_json" > "$params_file"
+  params_file_win=$(cygpath -m "$params_file")
   cmd_id=$(aws ssm send-command \
     --region "$REGION" \
     --instance-ids "$INSTANCE_ID" \
     --document-name "AWS-RunShellScript" \
     --comment "GameDay: ${description}" \
-    --parameters "file://${params_file}" \
+    --parameters "file://${params_file_win}" \
     --query "Command.CommandId" --output text)
   rm -f "$params_file"
 
