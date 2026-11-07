@@ -14,13 +14,16 @@
 #                      manual y no reinicia).
 #                      RECUPERACIÓN: automática por la restart policy de Docker.
 #                      No se reinicia nada a mano.
-#   F) latency       → Inyecta latencia de red con tc/netem dentro del contenedor.
-#                      El servicio NO se cae, se degrada (P95 > 250ms).
-#                      RECUPERACIÓN: auto-expiración programada (tc qdisc del).
+#   F) latency       → Inyecta latencia de red persistente con tc/netem dentro del
+#                      contenedor. El servicio NO se cae, se degrada (P95 > 250ms).
+#                      RECUPERACIÓN: intervención manual del SRE (`latency-fix`).
+#   G) latency-fix   → Remediación manual (Runbook SRE): elimina la regla netem
+#                      activa en el contenedor para restablecer la latencia nominal.
 #
 # Uso:
 #   ./gameday_inject_aws.sh service-down <INSTANCE_ID> [REGION] [CRASHES]
-#   ./gameday_inject_aws.sh latency      <INSTANCE_ID> [REGION] [DELAY_MS] [DURATION_S]
+#   ./gameday_inject_aws.sh latency      <INSTANCE_ID> [REGION] [DELAY_MS]
+#   ./gameday_inject_aws.sh latency-fix  <INSTANCE_ID> [REGION]
 #
 # Requisitos locales:
 #   - AWS CLI v2 autenticado con permisos ssm:SendCommand / ssm:GetCommandInvocation.
@@ -42,7 +45,8 @@ RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
 usage() {
   echo "Uso:"
   echo "  $0 service-down <INSTANCE_ID> [REGION]"
-  echo "  $0 latency      <INSTANCE_ID> [REGION] [DELAY_MS] [DURATION_S]"
+  echo "  $0 latency      <INSTANCE_ID> [REGION] [DELAY_MS]"
+  echo "  $0 latency-fix  <INSTANCE_ID> [REGION]"
   exit 1
 }
 
@@ -155,24 +159,17 @@ EOF
     ;;
 
   # ============================================================================
-  # ESCENARIO F — DEGRADACIÓN DE LATENCIA (auto-expiración, sin reinicio)
+  # ESCENARIO F — DEGRADACIÓN DE LATENCIA (persistente hasta remediación manual)
   # ============================================================================
   latency)
     DELAY_MS="${4:-400}"
-    DURATION_S="${5:-240}"
 
-    echo -e "${RED}[ATAQUE] Inyectando ${DELAY_MS}ms de latencia en el contenedor ${CONTAINER_NAME} por ${DURATION_S}s...${NC}"
-    echo -e "${YELLOW}El servicio NO se cae: se degrada (probe_success sigue en 1).${NC}"
+    echo -e "${RED}[ATAQUE] Inyectando ${DELAY_MS}ms de latencia PERSISTENTE en el contenedor ${CONTAINER_NAME}...${NC}"
+    echo -e "${YELLOW}El servicio NO se cae: se degrada (probe_success sigue en 1) hasta que el SRE intervenga.${NC}"
 
     # netem se aplica DENTRO del namespace de red del contenedor `mattermost`
-    # (nsenter desde el host, sin necesitar NET_ADMIN en el contenedor ni cambiar
-    # el `docker run` de Terraform). Motivo: el blackbox sondea a Mattermost por el
-    # puente de Docker (host.docker.internal), tráfico que NO pasa por la interfaz
-    # física de la EC2, así que un netem en el host no afectaría la medición.
-    # Efecto: retrasa las respuestas de Mattermost (egress de su eth0).
-    # La reversión queda PROGRAMADA en la propia EC2 con un 'sleep' en background,
-    # de modo que el defecto se auto-expira aunque el operador no intervenga.
-    # Si el contenedor se reinicia, su namespace se destruye y el defecto desaparece.
+    # (nsenter desde el host). La falla queda activa indefinidamente para que
+    # el equipo SRE diagnostique la alerta y ejecute el runbook de remediación.
     read -r -d '' INJECT_CMD <<EOF || true
 PID=\$(docker inspect -f '{{.State.Pid}}' ${CONTAINER_NAME})
 [ -n "\$PID" ] && [ "\$PID" != "0" ] || { echo "ERROR: contenedor ${CONTAINER_NAME} no esta corriendo"; exit 1; }
@@ -180,30 +177,42 @@ command -v tc >/dev/null || dnf install -y iproute-tc >/dev/null 2>&1 || true
 command -v tc >/dev/null || { echo "ERROR: falta tc (dnf install -y iproute-tc)"; exit 1; }
 nsenter -t \$PID -n tc qdisc del dev eth0 root 2>/dev/null || true
 nsenter -t \$PID -n tc qdisc add dev eth0 root netem delay ${DELAY_MS}ms
-echo "Latencia ${DELAY_MS}ms aplicada en eth0 de ${CONTAINER_NAME} (PID \$PID). Reversion automatica en ${DURATION_S}s."
+logger "GameDay: latencia persistente de ${DELAY_MS}ms inyectada en ${CONTAINER_NAME} (PID \$PID)"
+echo "Latencia PERSISTENTE (${DELAY_MS}ms) activa en eth0 de ${CONTAINER_NAME} (PID \$PID)."
 nsenter -t \$PID -n tc qdisc show dev eth0
-# Reversión auto-expirante e independiente de la sesión SSM:
-nohup sh -c "sleep ${DURATION_S}; nsenter -t \$PID -n tc qdisc del dev eth0 root 2>/dev/null || true; logger 'GameDay: latencia netem revertida automaticamente'" >/dev/null 2>&1 &
-echo "Reversion programada (PID \$!)."
 EOF
 
-    # Escapar comillas para el JSON de --parameters
     ESCAPED=$(printf '%s' "$INJECT_CMD" | python3 -c 'import json,sys; print(json.dumps([sys.stdin.read()]))')
-    run_on_ec2 "inject netem latency ${DELAY_MS}ms for ${DURATION_S}s" "$ESCAPED"
+    run_on_ec2 "inject persistent netem latency ${DELAY_MS}ms" "$ESCAPED"
 
     echo ""
-    echo -e "${YELLOW}OBSERVAR EN VIVO (no se interviene manualmente):${NC}"
-    echo "  → Grafana:    panel de Latencia cruza el umbral de 250ms"
-    echo "  → Prometheus: MattermostLatencySLODegraded → FIRING (~1 min)"
-    echo "  → probe_success SIGUE en 1 (el servicio nunca se cae)"
-    echo "  → RECUPERACIÓN: la regla netem se auto-elimina a los ${DURATION_S}s;"
-    echo "    Mattermost no se reinicia y la latencia vuelve a su rango nominal."
+    echo -e "${YELLOW}FLUJO DEL ESCENARIO (intervención manual SRE):${NC}"
+    echo "  1. Detectar:   Grafana supera el umbral de 250ms y Prometheus dispara MattermostLatencySLODegraded."
+    echo "  2. Investigar: Revisar en Loki/Tempo el aumento de duración en /api/v4/system/ping."
+    echo "  3. Remediar:   Ejecutar el runbook de solución para eliminar el cuello de botella de red:"
+    echo -e "     ${GREEN}$0 latency-fix ${INSTANCE_ID} ${REGION}${NC}"
+    ;;
+
+  # ============================================================================
+  # ESCENARIO G — REMEDIACIÓN MANUAL DE LATENCIA (Runbook SRE)
+  # ============================================================================
+  latency-fix)
+    echo -e "${GREEN}[REMEDIACIÓN SRE] Eliminando degradación de red (tc/netem) en ${CONTAINER_NAME}...${NC}"
+
+    read -r -d '' FIX_CMD <<EOF || true
+PID=\$(docker inspect -f '{{.State.Pid}}' ${CONTAINER_NAME})
+[ -n "\$PID" ] && [ "\$PID" != "0" ] || { echo "ERROR: contenedor ${CONTAINER_NAME} no esta corriendo"; exit 1; }
+nsenter -t \$PID -n tc qdisc del dev eth0 root 2>/dev/null || true
+logger "GameDay: remediacion SRE aplicada; latencia netem eliminada en ${CONTAINER_NAME}"
+echo "Regla netem eliminada exitosamente. Estado actual de eth0:"
+nsenter -t \$PID -n tc qdisc show dev eth0
+EOF
+
+    ESCAPED=$(printf '%s' "$FIX_CMD" | python3 -c 'import json,sys; print(json.dumps([sys.stdin.read()]))')
+    run_on_ec2 "SRE remediation: remove netem latency" "$ESCAPED"
+
     echo ""
-    echo -e "${GREEN}Inyección aplicada con reversión automática programada.${NC}"
-    echo -e "Reversión manual de emergencia (solo si algo falla; reiniciar el contenedor también la elimina):"
-    echo -e "  aws ssm send-command --region ${REGION} --instance-ids ${INSTANCE_ID} \\"
-    echo -e "    --document-name AWS-RunShellScript \\"
-    echo -e "    --parameters 'commands=[\"nsenter -t \$(docker inspect -f {{.State.Pid}} ${CONTAINER_NAME}) -n tc qdisc del dev eth0 root\"]'"
+    echo -e "${GREEN}✅ Remediación completada: la latencia regresará a valores nominales (<20ms) y la alerta se resolverá.${NC}"
     ;;
 
   *)
@@ -215,6 +224,7 @@ esac
 echo ""
 echo -e "${GREEN}======================================================================"
 echo "  Consolas de observabilidad:"
-echo "    Grafana:    http://<HOST_OBS>:3000"
-echo "    Prometheus: http://<HOST_OBS>:9090/alerts"
+echo "    Mattermost: http://3.217.54.83:8065/signup_user_complete"
+echo "    Grafana:    http://3.217.54.83:3000/"
+echo "    Prometheus: http://3.217.54.83:9090/alerts?search="
 echo -e "======================================================================${NC}"

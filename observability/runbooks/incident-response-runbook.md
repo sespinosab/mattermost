@@ -1,249 +1,103 @@
-# Runbook Operativo de Respuesta a Incidentes SRE — Mattermost
+# Runbook Operativo de Respuesta a Incidentes SRE — Mattermost (AWS)
 
-**Servicio:** Plataforma de Comunicación y Colaboración Mattermost
+**Servicio:** Plataforma Mattermost en Producción (AWS EC2 / Amazon Linux)  
+**Objetivo de Confiabilidad (SLO):** Disponibilidad $\ge 99.9\%$ | Latencia $P_{95} \le 250\text{ ms}$  
 
-**Nivel de Criticidad:** Tier 1 (Servicio Crítico de Producción)
-
-**Objetivo de Confiabilidad (SLO):** Disponibilidad $\ge 99.9\%$ | Latencia $P_{95} \le 250\text{ ms}$
-
-**Monitoreo y Alertas:** Prometheus & Grafana Stack (`/observability`)
-
----
-
-## 1. Matriz de Severidad y Rutas de Escalamiento
-
-| Severidad | Criterio de Activación | Tiempo Respuesta (MTTA) | Responsable Primario |
-|---|---|---|---|
-| **P1 - Crítica** | Burn Rate $> 14.4\times$, servicio caído (`probe_success == 0`), PostgreSQL DOWN (`pg_up == 0`). | $< 5$ minutos | SRE On-Call + Lead Backend |
-| **P2 - Alta** | Burn Rate $> 6.0\times$, Latencia $P_{95} > 250\text{ ms}$ sostenida por $> 3\text{ min}$. | $< 15$ minutos | SRE On-Call + Sysadmin |
-| **P3 - Media** | Saturación de CPU/Memoria $> 85\%$ (`HostHighCPUUsage`), Degradación menor de Error Budget. | $< 1$ hora | DevOps / Equipo de Infraestructura |
+### Enlaces de Observabilidad y Servicio
+- **Mattermost App:** [http://3.217.54.83:8065/signup_user_complete](http://3.217.54.83:8065/signup_user_complete)
+- **Grafana Dashboard:** [http://3.217.54.83:3000/](http://3.217.54.83:3000/)
+- **Prometheus Alertas:** [http://3.217.54.83:9090/alerts?search=](http://3.217.54.83:9090/alerts?search=)
 
 ---
 
-## 2. Flujo de Triage Inicial (Primeros 3 Minutos)
+## 1. Triage Inicial Rápido (Primeros 2 Minutos)
 
-Ante cualquier alerta disparada en Prometheus o notificación de incidente:
+1. **Confirmar Impacto en Dashboards:**
+   - **Grafana:** Revisar paneles *"Estado del Servicio"*, *"Saldo Restante de Error Budget"* y *"Latencia P95 / Promedio"*.
+   - **Prometheus:** Validar si hay alertas en estado `PENDING` o `FIRING`.
 
-1. **Confirmar Impacto y Alcance en Dashboards:**
-   - Abrir el panel principal en Grafana: [http://localhost:3000](http://localhost:3000)
-   - Revisar los paneles clave: **"Estado del Servicio (Blackbox Probe)"**, **"Saldo Restante de Error Budget"** y **"1. Tráfico: Tasa de Peticiones HTTP"**.
-   - Validar estado de alertas en Prometheus: [http://localhost:9090/alerts](http://localhost:9090/alerts)
-
-2. **Verificar Estado de los Contenedores del Stack:**
+2. **Verificar Salud del Servicio:**
    ```bash
-   docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | grep -E "mattermost"
+   curl -i -s -m 5 http://3.217.54.83:8065/signup_user_complete || echo "ALERTA: MATTERMOST NO RESPONDE"
    ```
 
-3. **Verificar Salud Directa y Sondas Sintéticas:**
+3. **Verificar Contenedor en la Instancia (Amazon Linux):**
    ```bash
-   # 1. Probar respuesta directa al endpoint de salud HTTP
-   curl -i -s -m 5 http://localhost:8065/api/v4/system/ping || echo "ALERTA: MATTERMOST NO RESPONDE"
-
-   # 2. Consultar la sonda del Blackbox Exporter
-   curl -s "http://localhost:9115/probe?target=http://mattermost-app:8065/api/v4/system/ping&module=http_mattermost_ping" | grep probe_success
+   docker ps --filter "name=mattermost-app" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
    ```
 
 ---
 
-## 3. Procedimientos de Diagnóstico y Mitigación por Incidente
+## 2. Procedimientos de Incidentes y GameDay AWS
 
-### 3.1 Incidente A: `MattermostHighBurnRateCritical` o `MattermostServiceDown`
-**Condición:** Tasa de fallos elevada sostenida (Burn Rate $> 14.4\times$) o el servicio no responde peticiones HTTP (`probe_success == 0`).
+### Escenario 1: `MattermostServiceDown` (Caída del Servicio)
+**Síntoma:** El servicio no responde HTTP (`probe_success == 0`). Alerta `MattermostServiceDown` en `FIRING`.
 
 #### Diagnóstico:
-1. Comprobar si el contenedor `mattermost-app` está detenido, en bucle de reinicio o si fue terminado por OOM:
-   ```bash
-   docker inspect mattermost-app --format 'Estado: {{.State.Status}} | OOMKilled: {{.State.OOMKilled}} | ExitCode: {{.State.ExitCode}}'
-   ```
-2. Inspeccionar los últimos logs de la aplicación buscando errores fatales o pánicos:
-   ```bash
-   docker logs --tail 100 mattermost-app | grep -iE "error|fatal|panic|database|connection refused"
-   ```
-
-#### Mitigación Rápida:
-- Si el contenedor está detenido o colgado:
-  ```bash
-  docker restart mattermost-app
-  ```
-- Si la aplicación falla por desconexión con la base de datos:
-  ```bash
-  # Validar que PostgreSQL responda
-  docker exec -it mattermost-db pg_isready -U mmuser -d mattermost
-  # Reiniciar ambos servicios en orden de dependencia
-  docker restart mattermost-db && sleep 5 && docker restart mattermost-app
-  ```
-
----
-
-### 3.2 Incidente B: `MattermostDatabaseDown`
-**Condición:** `pg_up == 0` (El exportador de PostgreSQL no puede conectar con el motor relacional).
-
-#### Diagnóstico:
-1. Verificar si el contenedor de PostgreSQL está activo e inspeccionar logs:
-   ```bash
-   docker logs --tail 50 mattermost-db
-   ```
-2. Revisar si PostgreSQL alcanzó el límite máximo de conexiones concurrentes:
-   ```bash
-   docker exec -it mattermost-db psql -U mmuser -d mattermost -c "SELECT count(*) AS conexiones_activas FROM pg_stat_activity;"
-   ```
-
-#### Mitigación Rápida:
-- Reiniciar el contenedor de base de datos:
-  ```bash
-  docker restart mattermost-db
-  ```
-- Si hay consultas bloqueantes (*deadlocks*) o transacciones inactivas agotando el pool:
-  ```bash
-  docker exec -it mattermost-db psql -U mmuser -d mattermost -c "
-    SELECT pg_terminate_backend(pid)
-    FROM pg_stat_activity
-    WHERE state = 'idle in transaction' AND state_change < current_timestamp - INTERVAL '5' MINUTE;
-  "
-  ```
-
----
-
-### 3.2-AWS Incidente B en producción: `MattermostDatabaseDown` con RDS
-**Aplica en AWS:** la base de datos es la instancia gestionada `mattermost-postgres` (RDS PostgreSQL 16, Single-AZ). Los comandos `docker exec mattermost-db …` de la sección 3.2 solo valen para el entorno local.
-
-#### Diagnóstico:
-1. Estado de la instancia y eventos recientes:
-   ```bash
-   aws rds describe-db-instances --db-instance-identifier mattermost-postgres \
-     --query 'DBInstances[0].{Estado:DBInstanceStatus,AZ:AvailabilityZone,Endpoint:Endpoint.Address}' --output table
-   aws rds describe-events --source-type db-instance --source-identifier mattermost-postgres --duration 120
-   ```
-2. Conectividad desde la EC2 (por SSM): `pg_isready -h <endpoint> -p 5432` y revisión del *security group* de la BD (solo debe permitir 5432 desde la aplicación).
-3. Confirmar el síntoma en la aplicación: `docker logs --tail 100 mattermost-app | grep -iE "database|connection|pq:"`.
-
-#### Mitigación:
-- **Fallo transitorio:** `aws rds reboot-db-instance --db-instance-identifier mattermost-postgres`. Mattermost reconecta solo; **no** reiniciar la aplicación.
-- **Instancia perdida o corrupta:** restaurar a un punto en el tiempo hacia una instancia nueva:
-  ```bash
-  aws rds restore-db-instance-to-point-in-time \
-    --source-db-instance-identifier mattermost-postgres \
-    --target-db-instance-identifier mattermost-postgres-restored \
-    --use-latest-restorable-time
-  ```
-  Aplicar el mismo grupo de subredes y *security group*, actualizar `DB_HOST` en las variables del *environment* de GitHub y redeplegar.
-- **Límites de la configuración actual:** Single-AZ, retención de backups de 1 día y sin protección contra borrado. Una caída prolongada consume el presupuesto de error a 1 000× (ver `docs/PRE-MORTEM.md`).
-
----
-
-### 3.3 Incidente C: `MattermostLatencySLODegraded`
-**Condición:** Latencia promedio (ventana de 1 min) $> 250\text{ ms}$ sostenida por más de 30 segundos.
-
-#### Diagnóstico:
-1. Identificar si existe saturación de recursos en los contenedores:
-   ```bash
-   docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.NetIO}}"
-   ```
-2. Desglosar las fases de latencia HTTP mediante la sonda de Blackbox:
-   ```bash
-   curl -s "http://localhost:9115/probe?target=http://mattermost-app:8065/&module=http_2xx" | grep -E "probe_http_duration_seconds|probe_duration_seconds"
-   ```
-
-#### Mitigación Rápida:
-- Si el tiempo de procesamiento interno es elevado:
-  ```bash
-  # Reiniciar el contenedor de la aplicación para purgar memoria y buffers
-  docker restart mattermost-app
-  ```
-- Si la lentitud se origina en la capa de persistencia:
-  ```bash
-  # Reorganizar y optimizar las estadísticas de PostgreSQL
-  docker exec -it mattermost-db vacuumdb -U mmuser -d mattermost --analyze --verbose
-  ```
-
----
-
-### 3.4 Incidente D: `HostHighCPUUsage` o `HostHighMemoryUsage`
-**Condición:** Uso de CPU del host $> 85\%$ o Memoria $> 90\%$ de forma sostenida (Riesgo de degradación general del sistema).
-
-#### Diagnóstico:
-1. Identificar qué proceso o contenedor está consumiendo recursos en el sistema anfitrión:
-   ```bash
-   # Inspección de contenedores
-   docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}"
-   # Inspección de procesos generales en Linux
-   ps aux --sort=-%cpu | head -n 10
-   ```
-
-#### Mitigación Rápida:
-- Si un proceso en bucle o prueba de carga dentro de `mattermost-app` está saturando los núcleos (ej. simulación `high-load`):
-  ```bash
-  # Terminar procesos de cálculo descontrolados y reiniciar el contenedor
-  docker exec mattermost-app sh -c 'pkill -f "while true" 2>/dev/null' || true
-  docker restart mattermost-app
-  ```
-
----
-
-## 4. Verificación del Restablecimiento del Servicio
-
-Tras ejecutar cualquier acción de remediación:
-
-1. **Verificar que el servicio responda HTTP 200:**
-   ```bash
-   curl -i http://localhost:8065/api/v4/system/ping
-   ```
-2. **Confirmar que todos los objetivos de Prometheus retornen a estado `[UP]`:**
-   ```bash
-   curl -s http://localhost:9090/api/v1/targets | python3 -c "
-   import sys, json
-   data = json.load(sys.stdin)
-   for t in data.get('data', {}).get('activeTargets', []):
-       print(f\"[{t['health'].upper()}] Job: {t['labels'].get('job'):25s}\")
-   "
-   ```
-3. **Validación en Grafana durante 5 minutos:**
-   - El **SLI de disponibilidad** debe volver y estabilizarse sobre el **$99.9\%$**.
-   - El panel **"Estado del Servicio"** debe marcar **UP ✅**.
-   - Las alertas en [http://localhost:9090/alerts](http://localhost:9090/alerts) deben transicionar a **INACTIVE**.
-
----
-
-## 5. Simulación de Pruebas del Runbook
-
-### 5.1 Entorno local (contenedores Docker)
-
-Para entrenar y validar los procedimientos de este Runbook de forma controlada en local:
-
 ```bash
-# Simulación 1: Caída de la aplicación (Procedimiento 3.1)
-./observability/scripts/simulate_incident.sh service-down 60
-
-# Simulación 2: Caída de PostgreSQL (Procedimiento 3.2)
-./observability/scripts/simulate_incident.sh db-down 60
-
-# Simulación 3: Sobrecarga extrema de CPU (Procedimiento 3.4)
-./observability/scripts/simulate_incident.sh high-load 60
+docker inspect mattermost-app --format 'Estado: {{.State.Status}} | ExitCode: {{.State.ExitCode}}'
+docker logs --tail 50 mattermost-app
 ```
 
-### 5.2 Entorno AWS (GameDay sobre EC2 vía SSM)
-
-En producción, Mattermost corre como contenedor `mattermost-app` en la EC2 primaria
-(desplegado por CI/CD con `docker-compose`, `restart: unless-stopped`), junto al stack de
-observabilidad en la misma instancia. La base de datos es **RDS gestionado** y la
-inyección se envía por **SSM Run Command** (sin SSH).
-Los dos escenarios del GameDay se recuperan **por el propio software**, sin
-intervención manual.
-
+#### Inyección GameDay (AWS SSM):
 ```bash
-# Escenario A — Caída del servicio (self-healing por restart policy de Docker)
-./observability/scripts/gameday_inject_aws.sh service-down <INSTANCE_ID> <REGION> 10
-
-# Escenario F — Degradación de latencia (netem, auto-expiración programada)
-./observability/scripts/gameday_inject_aws.sh latency <INSTANCE_ID> <REGION> 400 240
+./observability/scripts/gameday_inject_aws.sh service-down <INSTANCE_ID> [REGION] 10
 ```
+*Simula un crash-loop de 10 caídas consecutivas con `kill -9` al PID principal.*
 
-| Escenario | Ataque | Señal dorada | Alerta | Recuperación (por software) |
-|---|---|---|---|---|
-| **A** | Crash-loop: 10 × `kill -9` al proceso principal de `mattermost-app` (desde el host, vía SSM). **No** usar `docker kill`/`docker stop`: Docker los trata como parada manual e ignora la restart policy. | Disponibilidad / Errores | `MattermostServiceDown` (~1 min de caída sostenida; en el ensayo disparó a ~75 s) | Al terminar el bucle, `--restart unless-stopped` deja el contenedor arriba solo (caída total ≈ 1 min 50 s en el ensayo). No se reinicia a mano. |
-| **F** | `tc netem delay` en la interfaz del contenedor `mattermost-app` (vía `nsenter`, por SSM) | Latencia (> 250 ms) | `MattermostLatencySLODegraded` (ensayo con 400 ms: `pending` a ~40 s, `firing` a ~70 s; latencia 1,7 ms → ~800 ms) | La regla `netem` se auto-elimina por timer (ensayo: a los 180 s); Mattermost no se reinicia y la alerta se resuelve ~60 s después. |
+#### Remediación y Recuperación:
+- **Comportamiento esperado (Self-healing):** Al terminar el ciclo, la política `--restart unless-stopped` estabiliza y levanta el contenedor automáticamente.
+- **Acción manual de contingencia (si no levanta):**
+  ```bash
+  cd /opt/mattermost && docker-compose up -d
+  ```
 
-> **Nota de topología (verificada en vivo):** el stack de observabilidad corre en la misma
-> EC2 primaria, en la red `mattermost_mattermost_network`, y sondea `mattermost-app:8065`.
-> Todos los targets de Prometheus están `UP`. Antes del ensayo, la EC2 necesita `tc`
-> (`dnf install -y iproute-tc`); el script intenta instalarlo si falta.
+---
+
+### Escenario 2: `MattermostLatencySLODegraded` (Degradación de Latencia)
+**Síntoma:** El servicio sigue activo (`probe_success == 1`), pero la latencia supera el SLO ($> 250\text{ ms}$, rondando $400\text{ ms}$).
+
+#### Diagnóstico:
+1. Verificar tiempo de respuesta con Blackbox:
+   ```bash
+   curl -s "http://localhost:9115/probe?target=http://mattermost-app:8065/api/v4/system/ping&module=http_mattermost_ping" | grep probe_duration_seconds
+   ```
+2. Inspeccionar si hay reglas de retardo de red en el contenedor:
+   ```bash
+   PID=$(docker inspect -f '{{.State.Pid}}' mattermost-app)
+   sudo nsenter -t $PID -n tc qdisc show dev eth0
+   ```
+
+#### Inyección GameDay (AWS SSM):
+```bash
+./observability/scripts/gameday_inject_aws.sh latency <INSTANCE_ID> [REGION] 400
+```
+*Inyecta 400 ms de latencia artificial persistente en la interfaz `eth0` del contenedor.*
+
+#### Remediación SRE (Eliminación de la degradación):
+- **Vía script SRE (Remoto por SSM):**
+  ```bash
+  ./observability/scripts/gameday_inject_aws.sh latency-fix <INSTANCE_ID> [REGION]
+  ```
+- **Vía directa en la EC2 (Amazon Linux):**
+  ```bash
+  PID=$(docker inspect -f '{{.State.Pid}}' mattermost-app)
+  sudo nsenter -t $PID -n tc qdisc del dev eth0 root
+  ```
+*La latencia vuelve inmediatamente a < 20 ms y la alerta se resuelve.*
+
+---
+
+## 3. Verificación y Restablecimiento Post-Incidente
+
+1. **Validar Respuesta HTTP 200:**
+   ```bash
+   curl -i http://3.217.54.83:8065/signup_user_complete
+   ```
+2. **Confirmar Alertas Inactivas:**
+   - Verificar en [http://3.217.54.83:9090/alerts?search=](http://3.217.54.83:9090/alerts?search=) que no existan alertas en `FIRING`.
+3. **Restablecer SLI y Error Budget al 100% (para la presentación):**
+   ```bash
+   ./scripts/reset_sli_budget.sh
+   ```
+   *(Limpia métricas históricas de fallo y deja el saldo y disponibilidad en 100% en Grafana en 10s).*
