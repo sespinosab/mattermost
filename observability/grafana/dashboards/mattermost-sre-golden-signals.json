@@ -194,33 +194,21 @@
     },
     {
       "id": 5,
-      "title": "1. Tráfico: Tasa de Peticiones HTTP (req/s)",
+      "title": "1. Tráfico: Peticiones HTTP a Mattermost (req/s)",
       "type": "timeseries",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 7 },
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "count_over_time(probe_success{job=\"blackbox_http_api\"}[1m]) / 60",
-          "legendFormat": "Peticiones API: {{instance}} (req/s)",
-          "refId": "A"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
           "expr": "count_over_time(probe_success{job=\"blackbox_http_mattermost\"}[1m]) / 60",
-          "legendFormat": "Peticiones Ping Health (req/s)",
-          "refId": "B"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "rate(prometheus_http_requests_total[1m])",
-          "legendFormat": "Consultas HTTP Stack (req/s)",
-          "refId": "C"
+          "legendFormat": "Peticiones Health Check (req/s)",
+          "refId": "A"
         }
       ],
       "options": {
         "legend": { "displayMode": "list", "placement": "bottom" },
-        "tooltip": { "mode": "multi" }
+        "tooltip": { "mode": "single" }
       },
       "fieldConfig": {
         "defaults": {
@@ -245,25 +233,13 @@
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "expr": "probe_duration_seconds{job=\"blackbox_http_mattermost\"} * 1000",
-          "legendFormat": "Latencia Total (ms)",
+          "legendFormat": "Latencia Mattermost (ms)",
           "refId": "A"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "probe_http_duration_seconds{job=\"blackbox_http_mattermost\",phase=\"connect\"} * 1000",
-          "legendFormat": "TCP Connect (ms)",
-          "refId": "B"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "probe_http_duration_seconds{job=\"blackbox_http_mattermost\",phase=\"processing\"} * 1000",
-          "legendFormat": "Processing (ms)",
-          "refId": "C"
         }
       ],
       "options": {
         "legend": { "displayMode": "list", "placement": "bottom" },
-        "tooltip": { "mode": "multi" }
+        "tooltip": { "mode": "single" }
       },
       "fieldConfig": {
         "defaults": {
@@ -273,7 +249,14 @@
             "spanNulls": true
           },
           "unit": "ms",
-          "color": { "mode": "palette-classic" }
+          "color": { "mode": "palette-classic" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 250 }
+            ]
+          }
         }
       }
     },
@@ -390,15 +373,9 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum by (name) (rate(container_cpu_usage_seconds_total[1m])) * 100",
+          "expr": "sum by (name) (rate(container_cpu_usage_seconds_total{name=~\"mattermost.*\"}[1m])) * 100",
           "legendFormat": "{{name}}",
           "refId": "A"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "container:cpu_utilization:percent5m",
-          "legendFormat": "Regla: {{name}}",
-          "refId": "B"
         }
       ],
       "options": {
@@ -428,7 +405,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "container_memory_usage_bytes / 1024 / 1024",
+          "expr": "container_memory_usage_bytes{name=~\"mattermost.*\"} / 1024 / 1024",
           "legendFormat": "{{name}}",
           "refId": "A"
         }
@@ -521,5 +498,5 @@
   "timezone": "browser",
   "title": "Mattermost SRE — Golden Signals & SLOs",
   "uid": "mattermost-sre-overview",
-  "version": 9
+  "version": 10
 }
